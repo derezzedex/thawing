@@ -1,0 +1,8 @@
+[package]
+name = "iced_thawing"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+wasmtime = "28.0"
+iced = "0.13"

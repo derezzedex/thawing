@@ -1,0 +1,67 @@
+package component:iced-thawing;
+
+interface types {
+  resource element {}
+
+  type pixels = f32;
+
+  record color {
+    r: f32,
+    g: f32,
+    b: f32,
+    a: f32
+  }
+}
+
+interface widget {
+  use types.{element, pixels, color};
+  use host.{message};
+
+  resource button {
+    constructor(content: element);
+
+    on-press: func(message: message) -> button;
+    into-element: func() -> element;
+  }
+
+  resource column {
+    constructor();
+
+    push: func(child: element) -> column;
+    into-element: func() -> element;
+  }
+
+  resource fragment {}
+
+  resource text {
+    constructor(fragment: fragment);
+
+    size: func(size: pixels) -> text;
+    color: func(color: color) -> text;
+    into-element: func() -> element;
+  }
+}
+
+interface host {
+  variant message {
+    button-pressed,
+  }
+}
+
+interface guest {
+  use types.{element};
+
+  resource app {
+    constructor();
+
+    view: func() -> element;
+  }
+}
+
+world thawing {
+    import types;
+    import widget;
+    import host;
+
+    export guest;
+}
