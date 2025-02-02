@@ -31,13 +31,13 @@ impl guest::GuestApp for MyApp {
         Column::new()
             .push(
                 Button::new(Text::new("Increment").into_element())
-                    .on_press(Message::Decrement)
+                    .on_press(Message::Increment)
                     .into_element(),
             )
             .push(Text::new(&self.value.to_string()).size(50.0).into_element())
             .push(
                 Button::new(Text::new("Decrement").into_element())
-                    .on_press(Message::Increment)
+                    .on_press(Message::Decrement)
                     .into_element(),
             )
             .into_element()

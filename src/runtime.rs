@@ -104,6 +104,7 @@ impl State {
             .app()
             .call_view(&mut store, app)
             .unwrap();
+
         let el = store.data_mut().element.remove(&view.rep()).unwrap();
         el
     }
@@ -114,9 +115,6 @@ type Table<T> = HashMap<u32, T>;
 #[derive(Default)]
 struct InternalState {
     indices: ResourceTable,
-    button: Table<IcedButton>,
-    text: Table<IcedText>,
-    column: Table<IcedColumn>,
     element: Table<IcedElement>,
 }
 
@@ -146,7 +144,7 @@ impl iced_thawing::widget::HostButton for InternalState {
         let button = IcedButton::new(content);
 
         let i = self.indices.push(()).unwrap();
-        self.button.insert(i.rep(), button);
+        self.element.insert(i.rep(), button.into());
         i
     }
 
@@ -155,9 +153,13 @@ impl iced_thawing::widget::HostButton for InternalState {
         button: Resource<iced_thawing::widget::Button>,
         message: iced_thawing::widget::Message,
     ) -> Resource<iced_thawing::widget::Button> {
-        let mut widget = self.button.remove(&button.rep()).unwrap();
-        widget = widget.on_press(message);
-        self.button.insert(button.rep(), widget);
+        let mut widget = self
+            .element
+            .remove(&button.rep())
+            .unwrap()
+            .downcast::<IcedButton>();
+        *widget = widget.on_press(message);
+        self.element.insert(button.rep(), (*widget).into());
 
         Resource::new_own(button.rep())
     }
@@ -166,13 +168,11 @@ impl iced_thawing::widget::HostButton for InternalState {
         &mut self,
         button: Resource<iced_thawing::widget::Button>,
     ) -> Resource<iced_thawing::widget::Element> {
-        let widget = self.button.remove(&button.rep()).unwrap();
-        self.element.insert(button.rep(), widget.into());
         Resource::new_own(button.rep())
     }
 
     fn drop(&mut self, button: Resource<iced_thawing::widget::Button>) -> wasmtime::Result<()> {
-        self.button.remove(&button.rep());
+        let _ = self.indices.delete(button);
         Ok(())
     }
 }
@@ -180,7 +180,7 @@ impl iced_thawing::widget::HostButton for InternalState {
 impl iced_thawing::widget::HostColumn for InternalState {
     fn new(&mut self) -> Resource<iced_thawing::widget::Column> {
         let i = self.indices.push(()).unwrap();
-        self.column.insert(i.rep(), IcedColumn::new());
+        self.element.insert(i.rep(), IcedColumn::new().into());
         i
     }
 
@@ -193,9 +193,13 @@ impl iced_thawing::widget::HostColumn for InternalState {
             .element
             .remove(&child.rep())
             .expect("button content not found");
-        let mut widget = self.column.remove(&column.rep()).unwrap();
-        widget = widget.push(content);
-        self.column.insert(column.rep(), widget);
+        let mut widget = self
+            .element
+            .remove(&column.rep())
+            .unwrap()
+            .downcast::<IcedColumn>();
+        *widget = widget.push(content);
+        self.element.insert(column.rep(), (*widget).into());
 
         Resource::new_own(column.rep())
     }
@@ -204,13 +208,11 @@ impl iced_thawing::widget::HostColumn for InternalState {
         &mut self,
         column: Resource<iced_thawing::widget::Column>,
     ) -> Resource<iced_thawing::widget::Element> {
-        let widget = self.column.remove(&column.rep()).unwrap();
-        self.element.insert(column.rep(), widget.into());
         Resource::new_own(column.rep())
     }
 
     fn drop(&mut self, column: Resource<iced_thawing::widget::Column>) -> wasmtime::Result<()> {
-        self.column.remove(&column.rep());
+        let _ = self.indices.delete(column);
         Ok(())
     }
 }
@@ -218,7 +220,7 @@ impl iced_thawing::widget::HostColumn for InternalState {
 impl iced_thawing::widget::HostText for InternalState {
     fn new(&mut self, fragment: String) -> Resource<iced_thawing::widget::Text> {
         let i = self.indices.push(()).unwrap();
-        self.text.insert(i.rep(), IcedText::new(fragment));
+        self.element.insert(i.rep(), IcedText::new(fragment).into());
         i
     }
 
@@ -227,9 +229,13 @@ impl iced_thawing::widget::HostText for InternalState {
         text: Resource<iced_thawing::widget::Text>,
         size: Pixels,
     ) -> Resource<iced_thawing::widget::Text> {
-        let mut widget = self.text.remove(&text.rep()).unwrap();
-        widget = widget.size(size);
-        self.text.insert(text.rep(), widget);
+        let mut widget = self
+            .element
+            .remove(&text.rep())
+            .unwrap()
+            .downcast::<IcedText>();
+        *widget = widget.size(size);
+        self.element.insert(text.rep(), (*widget).into());
 
         Resource::new_own(text.rep())
     }
@@ -239,14 +245,18 @@ impl iced_thawing::widget::HostText for InternalState {
         text: Resource<iced_thawing::widget::Text>,
         color: Color,
     ) -> Resource<iced_thawing::widget::Text> {
-        let mut widget = self.text.remove(&text.rep()).unwrap();
-        widget = widget.color(iced::Color {
+        let mut widget = self
+            .element
+            .remove(&text.rep())
+            .unwrap()
+            .downcast::<IcedText>();
+        *widget = widget.color(iced::Color {
             r: color.r,
             g: color.g,
             b: color.b,
             a: color.a,
         });
-        self.text.insert(text.rep(), widget);
+        self.element.insert(text.rep(), (*widget).into());
 
         Resource::new_own(text.rep())
     }
@@ -255,13 +265,11 @@ impl iced_thawing::widget::HostText for InternalState {
         &mut self,
         text: Resource<iced_thawing::widget::Text>,
     ) -> Resource<iced_thawing::widget::Element> {
-        let widget = self.text.remove(&text.rep()).unwrap();
-        self.element.insert(text.rep(), widget.into());
         Resource::new_own(text.rep())
     }
 
     fn drop(&mut self, text: Resource<iced_thawing::widget::Text>) -> wasmtime::Result<()> {
-        self.text.remove(&text.rep());
+        let _ = self.indices.delete(text);
         Ok(())
     }
 }

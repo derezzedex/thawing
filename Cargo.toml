@@ -5,5 +5,5 @@ edition = "2021"
 
 [dependencies]
 wasmtime = "28.0"
-iced = { version = "0.13", features = ["advanced"] }
+iced = { version = "0.14.0-dev", features = ["advanced", "debug"], git = "https://github.com/derezzedex/iced.git", rev = "5fed200b34d5f06c96220933ddbf16c61019ebd5" }
 notify = "8.0"
