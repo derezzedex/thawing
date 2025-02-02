@@ -5,4 +5,5 @@ edition = "2021"
 
 [dependencies]
 wasmtime = "28.0"
-iced = "0.13"
+iced = { version = "0.13", features = ["advanced"] }
+notify = "8.0"

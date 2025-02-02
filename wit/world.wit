@@ -31,10 +31,8 @@ interface widget {
     into-element: func() -> element;
   }
 
-  resource fragment {}
-
   resource text {
-    constructor(fragment: fragment);
+    constructor(fragment: string);
 
     size: func(size: pixels) -> text;
     color: func(color: color) -> text;
@@ -44,7 +42,8 @@ interface widget {
 
 interface host {
   variant message {
-    button-pressed,
+    increment,
+    decrement,
   }
 }
 
@@ -52,7 +51,7 @@ interface guest {
   use types.{element};
 
   resource app {
-    constructor();
+    constructor(value: s64);
 
     view: func() -> element;
   }

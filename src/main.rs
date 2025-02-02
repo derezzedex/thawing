@@ -1,157 +1,53 @@
-use wasmtime::component::{Component, Linker, Resource, ResourceTable};
+use iced::Task;
 
-use iced_thawing::host::Message;
-use iced_thawing::types::{Color, Pixels};
+mod runtime;
 
-pub type IcedText = iced::widget::Text<'static>;
-pub type IcedElement = iced::Element<'static, Message>;
-
-wasmtime::component::bindgen!({
-    world: "thawing",
-    // with: {
-    //     "component:iced-thawing/widget/text": IcedText,
-    //     "component:iced-thawing/types/element": IcedElement,
-    // }
-});
-
-fn main() -> wasmtime::Result<()> {
-    let engine = wasmtime::Engine::default();
-    let component = Component::from_file(
-        &engine,
-        "./component/target/wasm32-unknown-unknown/release/component.wasm",
-    )?;
-
-    let mut linker = Linker::new(&engine);
-    Thawing::add_to_linker(&mut linker, |state| state)?;
-
-    let mut store = wasmtime::Store::new(&engine, State::default());
-    let _bindings = Thawing::instantiate(&mut store, &component, &linker)?;
-
-    Ok(())
+fn main() -> iced::Result {
+    iced::application("Component model counter", Counter::update, Counter::view)
+        .run_with(Counter::new)
 }
 
-#[derive(Default)]
-struct State {}
+pub const PATH: &'static str = "./component/target/wasm32-unknown-unknown/debug/component.wasm";
 
-use component::iced_thawing;
-
-impl iced_thawing::host::Host for State {}
-
-impl iced_thawing::types::Host for State {}
-impl iced_thawing::types::HostElement for State {
-    fn drop(
-        &mut self,
-        rep: wasmtime::component::Resource<iced_thawing::types::Element>,
-    ) -> wasmtime::Result<()> {
-        todo!()
-    }
+#[derive(Debug)]
+pub enum Message {
+    Runtime(runtime::Message),
+    FileChanged,
 }
 
-impl iced_thawing::widget::Host for State {}
-
-impl iced_thawing::widget::HostButton for State {
-    fn new(
-        &mut self,
-        content: wasmtime::component::Resource<iced_thawing::widget::Element>,
-    ) -> wasmtime::component::Resource<iced_thawing::widget::Button> {
-        todo!()
-    }
-
-    fn on_press(
-        &mut self,
-        self_: wasmtime::component::Resource<iced_thawing::widget::Button>,
-        message: iced_thawing::widget::Message,
-    ) -> wasmtime::component::Resource<iced_thawing::widget::Button> {
-        todo!()
-    }
-
-    fn into_element(
-        &mut self,
-        self_: wasmtime::component::Resource<iced_thawing::widget::Button>,
-    ) -> wasmtime::component::Resource<iced_thawing::widget::Element> {
-        todo!()
-    }
-
-    fn drop(
-        &mut self,
-        rep: wasmtime::component::Resource<iced_thawing::widget::Button>,
-    ) -> wasmtime::Result<()> {
-        todo!()
-    }
+struct Counter {
+    value: i64,
+    state: runtime::State,
 }
 
-impl iced_thawing::widget::HostColumn for State {
-    fn new(&mut self) -> wasmtime::component::Resource<iced_thawing::widget::Column> {
-        todo!()
+impl Counter {
+    fn new() -> (Self, Task<Message>) {
+        (
+            Self {
+                value: 0,
+                state: runtime::State::new(PATH),
+            },
+            Task::stream(runtime::watch(PATH)),
+        )
+    }
+    fn update(&mut self, message: Message) {
+        match message {
+            Message::Runtime(message) => match message {
+                runtime::Message::Increment => {
+                    self.value += 1;
+                }
+                runtime::Message::Decrement => {
+                    self.value -= 1;
+                }
+            },
+            Message::FileChanged => {
+                println!("FileChanged!");
+                self.state = runtime::State::new(PATH);
+            }
+        }
     }
 
-    fn push(
-        &mut self,
-        self_: wasmtime::component::Resource<iced_thawing::widget::Column>,
-        child: wasmtime::component::Resource<iced_thawing::widget::Element>,
-    ) -> wasmtime::component::Resource<iced_thawing::widget::Column> {
-        todo!()
-    }
-
-    fn into_element(
-        &mut self,
-        self_: wasmtime::component::Resource<iced_thawing::widget::Column>,
-    ) -> wasmtime::component::Resource<iced_thawing::widget::Element> {
-        todo!()
-    }
-
-    fn drop(
-        &mut self,
-        rep: wasmtime::component::Resource<iced_thawing::widget::Column>,
-    ) -> wasmtime::Result<()> {
-        todo!()
-    }
-}
-
-impl iced_thawing::widget::HostFragment for State {
-    fn drop(
-        &mut self,
-        rep: wasmtime::component::Resource<iced_thawing::widget::Fragment>,
-    ) -> wasmtime::Result<()> {
-        todo!()
-    }
-}
-
-impl iced_thawing::widget::HostText for State {
-    fn new(
-        &mut self,
-        fragment: wasmtime::component::Resource<iced_thawing::widget::Fragment>,
-    ) -> wasmtime::component::Resource<iced_thawing::widget::Text> {
-        todo!()
-    }
-
-    fn size(
-        &mut self,
-        self_: wasmtime::component::Resource<iced_thawing::widget::Text>,
-        size: Pixels,
-    ) -> wasmtime::component::Resource<iced_thawing::widget::Text> {
-        todo!()
-    }
-
-    fn color(
-        &mut self,
-        self_: wasmtime::component::Resource<iced_thawing::widget::Text>,
-        color: Color,
-    ) -> wasmtime::component::Resource<iced_thawing::widget::Text> {
-        todo!()
-    }
-
-    fn into_element(
-        &mut self,
-        self_: wasmtime::component::Resource<iced_thawing::widget::Text>,
-    ) -> wasmtime::component::Resource<iced_thawing::widget::Element> {
-        todo!()
-    }
-
-    fn drop(
-        &mut self,
-        rep: wasmtime::component::Resource<iced_thawing::widget::Text>,
-    ) -> wasmtime::Result<()> {
-        todo!()
+    fn view(&self) -> iced::Element<Message> {
+        self.state.view(self.value).map(Message::Runtime)
     }
 }
