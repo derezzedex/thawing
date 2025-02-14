@@ -3,51 +3,83 @@ use iced::Task;
 mod runtime;
 
 fn main() -> iced::Result {
-    iced::application("Component model counter", Counter::update, Counter::view)
-        .run_with(Counter::new)
+    iced::application("A cool counter [thawing]", Thawing::update, Thawing::view)
+        .run_with(Thawing::new)
 }
 
 pub const PATH: &'static str = "./component/target/wasm32-unknown-unknown/debug/component.wasm";
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Message {
-    Runtime(runtime::Message),
-    FileChanged,
+    Increment(i64),
+    Decrement(i64),
 }
 
+impl From<Message> for runtime::host::Message {
+    fn from(msg: Message) -> Self {
+        match msg {
+            Message::Increment(n) => runtime::host::Message::Increment(n),
+            Message::Decrement(n) => runtime::host::Message::Decrement(n),
+        }
+    }
+}
+
+impl From<runtime::host::Message> for Message {
+    fn from(msg: runtime::host::Message) -> Self {
+        match msg {
+            runtime::host::Message::Increment(n) => Message::Increment(n),
+            runtime::host::Message::Decrement(n) => Message::Decrement(n),
+        }
+    }
+}
+
+#[derive(Default)]
 struct Counter {
     value: i64,
-    state: runtime::State,
 }
 
 impl Counter {
-    fn new() -> (Self, Task<Message>) {
+    fn update(&mut self, message: Message) {
+        println!("{message:?}");
+        match message {
+            Message::Increment(_n) => self.value += 1,
+            Message::Decrement(_n) => self.value -= 1,
+        }
+    }
+}
+
+struct Thawing {
+    inner: Counter,
+    runtime: runtime::State,
+}
+
+impl Thawing {
+    fn new() -> (Self, Task<runtime::Message>) {
         (
             Self {
-                value: 0,
-                state: runtime::State::new(PATH),
+                inner: Counter::default(),
+                runtime: runtime::State::new(PATH),
             },
             Task::stream(runtime::watch(PATH)),
         )
     }
-    fn update(&mut self, message: Message) {
+
+    fn update(&mut self, message: runtime::Message) {
         match message {
-            Message::Runtime(message) => match message {
-                runtime::Message::Increment => {
-                    self.value += 1;
-                }
-                runtime::Message::Decrement => {
-                    self.value -= 1;
-                }
-            },
-            Message::FileChanged => {
-                println!("FileChanged!");
-                self.state = runtime::State::new(PATH);
+            runtime::Message::Direct(message) => {
+                self.inner.update(message.into());
+            }
+            runtime::Message::Stateless(id) => {
+                let message = self.runtime.call(id);
+                self.inner.update(message.into());
+            }
+            runtime::Message::Thaw => {
+                self.runtime = runtime::State::new(PATH);
             }
         }
     }
 
-    fn view(&self) -> iced::Element<Message> {
-        self.state.view(self.value).map(Message::Runtime)
+    fn view(&self) -> iced::Element<runtime::Message> {
+        self.runtime.view(self.inner.value)
     }
 }

@@ -1,6 +1,12 @@
 package component:iced-thawing;
 
 interface types {
+  resource closure {
+    constructor();
+
+    id: func() -> u32;
+  }
+
   resource element {}
 
   type pixels = f32;
@@ -14,13 +20,14 @@ interface types {
 }
 
 interface widget {
-  use types.{element, pixels, color};
+  use types.{element, closure, pixels, color};
   use host.{message};
 
   resource button {
     constructor(content: element);
 
     on-press: func(message: message) -> button;
+    on-press-with: func(on-press: closure) -> button;
     into-element: func() -> element;
   }
 
@@ -41,19 +48,27 @@ interface widget {
 }
 
 interface host {
+  type state = s64;
+
   variant message {
-    increment,
-    decrement,
+    increment(s64),
+    decrement(s64),
   }
 }
 
 interface guest {
-  use types.{element};
+  use types.{element, closure};
+  use host.{state, message};
+
+  resource any {}
 
   resource app {
-    constructor(value: s64);
+    constructor();
 
-    view: func() -> element;
+    view: func(state: state) -> element;
+    
+    call: func(c: closure) -> message;
+    call-with: func(c: closure, state: any) -> message;
   }
 }
 
