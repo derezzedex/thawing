@@ -59,13 +59,12 @@ pub fn watch(path: impl AsRef<Path>) -> impl Stream<Item = Message> {
                     Ok(event) => {
                         if event.kind.is_create() {
                             std::thread::sleep(std::time::Duration::from_millis(500));
-                            println!("{event:?}");
                             output.send(Message::Thaw).await.expect(
                                 "Couldn't send a WatchedFileChanged Message for some odd reason",
                             );
                         }
                     }
-                    Err(e) => println!("watch error: {:?}", e),
+                    Err(_) => {}
                 }
             }
         }

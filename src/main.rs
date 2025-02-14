@@ -40,7 +40,6 @@ struct Counter {
 
 impl Counter {
     fn update(&mut self, message: Message) {
-        println!("{message:?}");
         match message {
             Message::Increment(_n) => self.value += 1,
             Message::Decrement(_n) => self.value -= 1,

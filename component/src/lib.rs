@@ -88,6 +88,11 @@ struct MyApp;
 
 impl guest::GuestApp for MyApp {
     fn new() -> Self {
+        TABLE
+        .lock()
+        .unwrap()
+        .clear();
+
         MyApp
     }
 
