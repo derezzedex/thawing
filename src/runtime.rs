@@ -184,7 +184,8 @@ impl iced_thawing::types::HostClosure for InternalState {
     }
 
     fn drop(&mut self, closure: Resource<iced_thawing::widget::Closure>) -> wasmtime::Result<()> {
-        self.table.delete(closure)?;
+        println!("drop closure");
+        let _ = self.table.delete(closure);
 
         Ok(())
     }
@@ -247,8 +248,7 @@ impl iced_thawing::widget::HostButton for InternalState {
         Resource::new_own(button.rep())
     }
 
-    fn drop(&mut self, button: Resource<iced_thawing::widget::Button>) -> wasmtime::Result<()> {
-        let _ = self.table.delete(button);
+    fn drop(&mut self, _button: Resource<iced_thawing::widget::Button>) -> wasmtime::Result<()> {
         Ok(())
     }
 }
@@ -287,8 +287,7 @@ impl iced_thawing::widget::HostColumn for InternalState {
         Resource::new_own(column.rep())
     }
 
-    fn drop(&mut self, column: Resource<iced_thawing::widget::Column>) -> wasmtime::Result<()> {
-        let _ = self.table.delete(column);
+    fn drop(&mut self, _column: Resource<iced_thawing::widget::Column>) -> wasmtime::Result<()> {
         Ok(())
     }
 }
@@ -344,8 +343,7 @@ impl iced_thawing::widget::HostText for InternalState {
         Resource::new_own(text.rep())
     }
 
-    fn drop(&mut self, text: Resource<iced_thawing::widget::Text>) -> wasmtime::Result<()> {
-        let _ = self.table.delete(text);
+    fn drop(&mut self, _text: Resource<iced_thawing::widget::Text>) -> wasmtime::Result<()> {
         Ok(())
     }
 }

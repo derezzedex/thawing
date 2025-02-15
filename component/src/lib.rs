@@ -5,11 +5,83 @@ use bindings::component::iced_thawing;
 use bindings::exports::component::iced_thawing::guest;
 use iced_thawing::host::Message;
 use iced_thawing::types::Element;
-use iced_thawing::widget::{Button, Column, Text};
+use iced_thawing::widget;
 
-use std::cell::RefCell;
 use std::collections::HashMap;
-use std::rc::Rc;
+use std::sync::{LazyLock, Mutex};
+static TABLE: LazyLock<Mutex<HashMap<u32, Closure>>> =
+    LazyLock::new(|| Mutex::new(HashMap::default()));
+
+struct Button {
+    raw: widget::Button,
+}
+
+impl Button {
+    fn new(content: impl Into<Element>) -> Self {
+        Self {
+            raw: widget::Button::new(content.into()),
+        }
+    }
+
+    fn on_press_with(mut self, closure: impl Fn() -> Message + Send + 'static) -> Self {
+        let closure = closure.into();
+        self.raw = self.raw.on_press_with(closure);
+        self
+    }
+}
+
+struct Column {
+    raw: widget::Column,
+}
+
+impl Column {
+    fn new() -> Self {
+        Self {
+            raw: widget::Column::new(),
+        }
+    }
+
+    fn push(mut self, content: impl Into<Element>) -> Self {
+        let el = content.into();
+        self.raw = self.raw.push(el);
+        self
+    }
+}
+
+struct Text {
+    raw: widget::Text,
+}
+
+impl Text {
+    fn new(fragment: impl ToString) -> Self {
+        Self {
+            raw: widget::Text::new(&fragment.to_string()),
+        }
+    }
+
+    fn size(mut self, size: f32) -> Self {
+        self.raw = self.raw.size(size.into());
+        self
+    }
+}
+
+impl From<Text> for Element {
+    fn from(text: Text) -> Self {
+        text.raw.into_element()
+    }
+}
+
+impl From<Button> for Element {
+    fn from(button: Button) -> Self {
+        button.raw.into_element()
+    }
+}
+
+impl From<Column> for Element {
+    fn from(column: Column) -> Self {
+        column.raw.into_element()
+    }
+}
 
 struct Component;
 
@@ -30,6 +102,7 @@ pub struct Closure {
 }
 
 impl Closure {
+    #[allow(dead_code)]
     fn stateful<S, T>(func: impl Fn(S) -> T + Send + 'static) -> Self
     where
         S: 'static,
@@ -53,11 +126,12 @@ impl Closure {
         }
     }
 
-    fn call(&self, state: AnyBox) -> AnyBox {
+    #[allow(dead_code)]
+    fn call_with(&self, state: AnyBox) -> AnyBox {
         (self.func)(state)
     }
 
-    fn call_stateless(&self) -> AnyBox {
+    fn call(&self) -> AnyBox {
         (self.func)(AnyBox::new(()))
     }
 }
@@ -69,29 +143,22 @@ impl guest::Guest for Component {
     type Any = AnyBox;
 }
 
-use std::sync::{LazyLock, Mutex};
-static TABLE: LazyLock<Mutex<HashMap<u32, Closure>>> =
-    LazyLock::new(|| Mutex::new(HashMap::default()));
-
-fn on_press_with(button: Button, closure: impl Fn() -> Message + Send + 'static) -> Button {
-    button.on_press_with({
-        let c = guest::Closure::new();
+impl<F: Fn() -> Message + Send + 'static> From<F> for guest::Closure {
+    fn from(f: F) -> guest::Closure {
+        let closure = guest::Closure::new();
         TABLE
             .lock()
             .unwrap()
-            .insert(c.id(), Closure::stateless(closure));
-        c
-    })
+            .insert(closure.id(), Closure::stateless(f));
+        closure
+    }
 }
 
 struct MyApp;
 
 impl guest::GuestApp for MyApp {
     fn new() -> Self {
-        TABLE
-        .lock()
-        .unwrap()
-        .clear();
+        TABLE.lock().unwrap().clear();
 
         MyApp
     }
@@ -99,27 +166,21 @@ impl guest::GuestApp for MyApp {
     fn view(&self, state: i64) -> Element {
         Column::new()
             .push(
-                on_press_with(
-                    Button::new(Text::new("Increment").into_element()),
-                    move || Message::Increment(state),
-                )
-                .into_element(),
+                Button::new(Text::new("Increment"))
+                    .on_press_with(move || Message::Increment(state)),
             )
-            .push(Text::new(&state.to_string()).size(50.0).into_element())
+            .push(Text::new(state).size(50.0))
             .push(
-                on_press_with(
-                    Button::new(Text::new("Decrement").into_element()),
-                    move || Message::Decrement(state),
-                )
-                .into_element(),
+                Button::new(Text::new("Decrement"))
+                    .on_press_with(move || Message::Decrement(state)),
             )
-            .into_element()
+            .into()
     }
 
     fn call(&self, c: guest::Closure) -> Message {
         let table = TABLE.lock().unwrap();
         let closure = table.get(&c.id()).unwrap();
-        closure.call_stateless().downcast()
+        closure.call().downcast()
     }
 
     fn call_with(&self, _c: guest::Closure, _state: guest::Any) -> Message {
