@@ -9,6 +9,7 @@ interface types {
 
   resource element {}
 
+  type bytes = list<u8>;
   type pixels = f32;
 
   record color {
@@ -31,6 +32,13 @@ interface widget {
     into-element: func() -> element;
   }
 
+  resource checkbox {
+    constructor(label: string, is-checked: bool);
+
+    on-toggle: func(on-toggle: closure) -> checkbox;
+    into-element: func() -> element;
+  }
+
   resource column {
     constructor();
 
@@ -48,19 +56,21 @@ interface widget {
 }
 
 interface host {
-  type state = s64;
+  record state {
+    counter: s64,
+    toggled: bool,
+  }
 
   variant message {
+    toggled(bool),
     increment(s64),
     decrement(s64),
   }
 }
 
 interface guest {
-  use types.{element, closure};
+  use types.{element, closure, bytes};
   use host.{state, message};
-
-  resource any {}
 
   resource app {
     constructor();
@@ -68,7 +78,7 @@ interface guest {
     view: func(state: state) -> element;
     
     call: func(c: closure) -> message;
-    call-with: func(c: closure, state: any) -> message;
+    call-with: func(c: closure, state: bytes) -> message;
   }
 }
 

@@ -11,6 +11,7 @@ pub const PATH: &'static str = "./component/target/wasm32-unknown-unknown/debug/
 
 #[derive(Debug, Clone)]
 pub enum Message {
+    Toggled(bool),
     Increment(i64),
     Decrement(i64),
 }
@@ -18,6 +19,7 @@ pub enum Message {
 impl From<Message> for runtime::host::Message {
     fn from(msg: Message) -> Self {
         match msg {
+            Message::Toggled(is_checked) => runtime::host::Message::Toggled(is_checked),
             Message::Increment(n) => runtime::host::Message::Increment(n),
             Message::Decrement(n) => runtime::host::Message::Decrement(n),
         }
@@ -27,6 +29,7 @@ impl From<Message> for runtime::host::Message {
 impl From<runtime::host::Message> for Message {
     fn from(msg: runtime::host::Message) -> Self {
         match msg {
+            runtime::host::Message::Toggled(is_checked) => Message::Toggled(is_checked),
             runtime::host::Message::Increment(n) => Message::Increment(n),
             runtime::host::Message::Decrement(n) => Message::Decrement(n),
         }
@@ -36,11 +39,13 @@ impl From<runtime::host::Message> for Message {
 #[derive(Default)]
 struct Counter {
     value: i64,
+    is_checked: bool,
 }
 
 impl Counter {
     fn update(&mut self, message: Message) {
         match message {
+            Message::Toggled(is_checked) => self.is_checked = is_checked,
             Message::Increment(_n) => self.value += 1,
             Message::Decrement(_n) => self.value -= 1,
         }
@@ -72,6 +77,10 @@ impl Thawing {
                 let message = self.runtime.call(id);
                 self.inner.update(message.into());
             }
+            runtime::Message::Stateful(id, state) => {
+                let message = self.runtime.call_with(id, state);
+                self.inner.update(message.into());
+            }
             runtime::Message::Thaw => {
                 self.runtime = runtime::State::new(PATH);
             }
@@ -79,6 +88,10 @@ impl Thawing {
     }
 
     fn view(&self) -> iced::Element<runtime::Message> {
-        self.runtime.view(self.inner.value)
+        let state = runtime::host::State {
+            counter: self.inner.value,
+            toggled: self.inner.is_checked,
+        };
+        self.runtime.view(state)
     }
 }

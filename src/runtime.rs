@@ -14,9 +14,11 @@ use iced_thawing::types::{Color, Pixels};
 pub type IcedColumn = iced::widget::Column<'static, Message>;
 pub type IcedButton = iced::widget::Button<'static, Message>;
 pub type IcedText = iced::widget::Text<'static>;
+pub type IcedCheckbox = iced::widget::Checkbox<'static, Message>;
 pub type IcedElement = iced::Element<'static, Message>;
 
 pub type Empty = ();
+pub type Bytes = Vec<u8>;
 
 wasmtime::component::bindgen!({
     world: "thawing",
@@ -24,6 +26,7 @@ wasmtime::component::bindgen!({
         "component:iced-thawing/widget/column": Empty,
         "component:iced-thawing/widget/text": Empty,
         "component:iced-thawing/widget/button": Empty,
+        "component:iced-thawing/widget/checkbox": Empty,
         "component:iced-thawing/types/closure": Empty,
         "component:iced-thawing/types/element": Empty,
     },
@@ -75,6 +78,7 @@ pub fn watch(path: impl AsRef<Path>) -> impl Stream<Item = Message> {
 pub enum Message {
     Direct(host::Message),
     Stateless(u32),
+    Stateful(u32, Bytes),
     Thaw,
 }
 
@@ -128,7 +132,21 @@ impl State {
             .unwrap()
     }
 
-    pub fn view(&self, state: i64) -> iced::Element<'static, Message> {
+    pub fn call_with(&mut self, closure: u32, state: Bytes) -> host::Message {
+        self.bindings
+            .borrow_mut()
+            .component_iced_thawing_guest()
+            .app()
+            .call_call_with(
+                &mut *self.store.borrow_mut(),
+                *self.app.borrow(),
+                Resource::new_own(closure),
+                &state,
+            )
+            .unwrap()
+    }
+
+    pub fn view(&self, state: host::State) -> iced::Element<'static, Message> {
         let mut store = self.store.borrow_mut();
         self.app.borrow_mut().resource_drop(&mut *store).unwrap();
         *store = wasmtime::Store::new(&self.engine, InternalState::default());
@@ -184,7 +202,6 @@ impl iced_thawing::types::HostClosure for InternalState {
     }
 
     fn drop(&mut self, closure: Resource<iced_thawing::widget::Closure>) -> wasmtime::Result<()> {
-        println!("drop closure");
         let _ = self.table.delete(closure);
 
         Ok(())
@@ -192,6 +209,45 @@ impl iced_thawing::types::HostClosure for InternalState {
 }
 
 impl iced_thawing::widget::Host for InternalState {}
+
+impl iced_thawing::widget::HostCheckbox for InternalState {
+    fn new(&mut self, label: String, is_checked: bool) -> Resource<iced_thawing::widget::Checkbox> {
+        let checkbox = IcedCheckbox::new(label, is_checked);
+
+        let i = self.table.push(()).unwrap();
+        self.element.insert(i.rep(), checkbox.into());
+        i
+    }
+
+    fn on_toggle(
+        &mut self,
+        checkbox: Resource<iced_thawing::widget::Checkbox>,
+        closure: Resource<iced_thawing::types::Closure>,
+    ) -> Resource<iced_thawing::widget::Checkbox> {
+        let mut widget = self
+            .element
+            .remove(&checkbox.rep())
+            .unwrap()
+            .downcast::<IcedCheckbox>();
+        *widget = widget.on_toggle(move |is_checked| {
+            Message::Stateful(closure.rep(), bincode::serialize(&is_checked).unwrap())
+        });
+        self.element.insert(checkbox.rep(), (*widget).into());
+
+        Resource::new_own(checkbox.rep())
+    }
+
+    fn into_element(
+        &mut self,
+        button: Resource<iced_thawing::widget::Checkbox>,
+    ) -> Resource<iced_thawing::widget::Element> {
+        Resource::new_own(button.rep())
+    }
+
+    fn drop(&mut self, _button: Resource<iced_thawing::widget::Checkbox>) -> wasmtime::Result<()> {
+        Ok(())
+    }
+}
 
 impl iced_thawing::widget::HostButton for InternalState {
     fn new(

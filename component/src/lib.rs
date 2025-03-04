@@ -3,6 +3,7 @@ mod bindings;
 
 use bindings::component::iced_thawing;
 use bindings::exports::component::iced_thawing::guest;
+use iced_thawing::host;
 use iced_thawing::host::Message;
 use iced_thawing::types::Element;
 use iced_thawing::widget;
@@ -11,6 +12,8 @@ use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
 static TABLE: LazyLock<Mutex<HashMap<u32, Closure>>> =
     LazyLock::new(|| Mutex::new(HashMap::default()));
+
+type Bytes = Vec<u8>;
 
 struct Button {
     raw: widget::Button,
@@ -26,6 +29,34 @@ impl Button {
     fn on_press_with(mut self, closure: impl Fn() -> Message + Send + 'static) -> Self {
         let closure = closure.into();
         self.raw = self.raw.on_press_with(closure);
+        self
+    }
+}
+
+struct Checkbox {
+    raw: widget::Checkbox,
+}
+
+impl Checkbox {
+    fn new(label: impl Into<String>, is_checked: bool) -> Self {
+        Self {
+            raw: widget::Checkbox::new(&label.into(), is_checked),
+        }
+    }
+
+    fn on_toggle(mut self, f: impl Fn(bool) -> Message + Send + 'static) -> Self {
+        let guest_fn = guest::Closure::new();
+        let wrapper = move |state: AnyBox| -> AnyBox {
+            let bytes = state.downcast::<guest::Bytes>();
+            AnyBox::new(f(bincode::deserialize(&bytes).unwrap()))
+        };
+
+        let closure = Closure {
+            func: Box::new(wrapper),
+        };
+
+        TABLE.lock().unwrap().insert(guest_fn.id(), closure);
+        self.raw = self.raw.on_toggle(guest_fn);
         self
     }
 }
@@ -77,6 +108,12 @@ impl From<Button> for Element {
     }
 }
 
+impl From<Checkbox> for Element {
+    fn from(checkbox: Checkbox) -> Self {
+        checkbox.raw.into_element()
+    }
+}
+
 impl From<Column> for Element {
     fn from(column: Column) -> Self {
         column.raw.into_element()
@@ -102,13 +139,15 @@ pub struct Closure {
 }
 
 impl Closure {
-    #[allow(dead_code)]
     fn stateful<S, T>(func: impl Fn(S) -> T + Send + 'static) -> Self
     where
-        S: 'static,
+        S: serde::de::DeserializeOwned + 'static,
         T: 'static,
     {
-        let wrapper = move |state: AnyBox| -> AnyBox { AnyBox::new(func(state.downcast::<S>())) };
+        let wrapper = move |state: AnyBox| -> AnyBox {
+            let bytes = state.downcast::<guest::Bytes>();
+            AnyBox::new(func(bincode::deserialize(&bytes).unwrap()))
+        };
 
         Self {
             func: Box::new(wrapper),
@@ -126,7 +165,6 @@ impl Closure {
         }
     }
 
-    #[allow(dead_code)]
     fn call_with(&self, state: AnyBox) -> AnyBox {
         (self.func)(state)
     }
@@ -136,11 +174,8 @@ impl Closure {
     }
 }
 
-impl guest::GuestAny for AnyBox {}
-
 impl guest::Guest for Component {
     type App = MyApp;
-    type Any = AnyBox;
 }
 
 impl<F: Fn() -> Message + Send + 'static> From<F> for guest::Closure {
@@ -163,16 +198,17 @@ impl guest::GuestApp for MyApp {
         MyApp
     }
 
-    fn view(&self, state: i64) -> Element {
+    fn view(&self, state: host::State) -> Element {
         Column::new()
+            .push(Checkbox::new("stateful closure test", state.toggled).on_toggle(Message::Toggled))
             .push(
                 Button::new(Text::new("Increment"))
-                    .on_press_with(move || Message::Increment(state)),
+                    .on_press_with(move || Message::Increment(state.counter)),
             )
-            .push(Text::new(state).size(50.0))
+            .push(Text::new(state.counter).size(50.0))
             .push(
                 Button::new(Text::new("Decrement"))
-                    .on_press_with(move || Message::Decrement(state)),
+                    .on_press_with(move || Message::Decrement(state.counter)),
             )
             .into()
     }
@@ -183,8 +219,10 @@ impl guest::GuestApp for MyApp {
         closure.call().downcast()
     }
 
-    fn call_with(&self, _c: guest::Closure, _state: guest::Any) -> Message {
-        unimplemented!()
+    fn call_with(&self, c: guest::Closure, state: guest::Bytes) -> Message {
+        let table = TABLE.lock().unwrap();
+        let closure = table.get(&c.id()).unwrap();
+        closure.call_with(AnyBox::new(state)).downcast()
     }
 }
 

@@ -5,6 +5,8 @@ edition = "2021"
 
 [dependencies]
 wit-bindgen-rt = { version = "0.36.0", features = ["bitflags"] }
+bincode = "1.3"
+serde = "1.0"
 
 [lib]
 crate-type = ["cdylib"]
