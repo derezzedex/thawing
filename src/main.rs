@@ -7,7 +7,9 @@ fn main() -> iced::Result {
         .run_with(Thawing::new)
 }
 
-pub const PATH: &'static str = "./component/target/wasm32-unknown-unknown/debug/component.wasm";
+pub const SRC_PATH: &'static str = "./component/src/lib.rs";
+pub const WASM_PATH: &'static str =
+    "./component/target/wasm32-unknown-unknown/debug/component.wasm";
 
 #[derive(Debug, Clone)]
 pub enum Message {
@@ -62,9 +64,9 @@ impl Thawing {
         (
             Self {
                 inner: Counter::default(),
-                runtime: runtime::State::new(PATH),
+                runtime: runtime::State::new(WASM_PATH),
             },
-            Task::stream(runtime::watch(PATH)),
+            Task::stream(runtime::watch(SRC_PATH)),
         )
     }
 
@@ -82,7 +84,7 @@ impl Thawing {
                 self.inner.update(message.into());
             }
             runtime::Message::Thaw => {
-                self.runtime = runtime::State::new(PATH);
+                self.runtime = runtime::State::new(WASM_PATH);
             }
         }
     }

@@ -7,4 +7,4 @@ edition = "2021"
 wasmtime = "29.0"
 bincode = "1.3"
 iced = { version = "0.14.0-dev", features = ["advanced", "debug"], git = "https://github.com/derezzedex/iced.git", rev = "5fed200b34d5f06c96220933ddbf16c61019ebd5" }
-notify = "8.0"
+notify-debouncer-mini = "0.6"

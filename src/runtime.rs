@@ -33,38 +33,61 @@ wasmtime::component::bindgen!({
 });
 
 pub fn watch(path: impl AsRef<Path>) -> impl Stream<Item = Message> {
-    use notify::{Config, Event, RecommendedWatcher, RecursiveMode, Watcher};
+    let path = path
+        .as_ref()
+        .canonicalize()
+        .expect("failed to canonicalize path");
 
-    pub fn async_watcher() -> notify::Result<(RecommendedWatcher, Receiver<notify::Result<Event>>)>
-    {
+    use notify_debouncer_mini::notify::{self, RecommendedWatcher, RecursiveMode};
+    use notify_debouncer_mini::{new_debouncer, DebouncedEvent, DebouncedEventKind, Debouncer};
+
+    pub fn async_debouncer() -> notify::Result<(
+        Debouncer<RecommendedWatcher>,
+        Receiver<notify::Result<Vec<DebouncedEvent>>>,
+    )> {
         let (mut tx, rx) = channel(1);
 
-        let watcher = RecommendedWatcher::new(
-            move |res| {
-                futures::executor::block_on(async {
-                    tx.send(res).await.unwrap();
-                })
-            },
-            Config::default(),
-        )?;
+        let watcher = new_debouncer(std::time::Duration::from_secs(1), move |res| {
+            futures::executor::block_on(async {
+                tx.send(res).await.unwrap();
+            })
+        })?;
+
         Ok((watcher, rx))
     }
 
     iced::stream::channel(10, |mut output| async move {
-        let (mut watcher, mut rx) = async_watcher().expect("Failed to create watcher");
-        watcher
+        let (mut debouncer, mut rx) = async_debouncer().expect("Failed to create watcher");
+        debouncer
+            .watcher()
             .watch(path.as_ref(), RecursiveMode::NonRecursive)
-            .unwrap_or_else(|_| panic!("Failed to watch path {:?}", path.as_ref()));
+            .unwrap_or_else(|_| panic!("Failed to watch path {path:?}"));
+        println!("Watching {path:?}");
 
         loop {
             while let Some(res) = rx.next().await {
                 match res {
-                    Ok(event) => {
-                        if event.kind.is_create() {
-                            std::thread::sleep(std::time::Duration::from_millis(500));
-                            output.send(Message::Thaw).await.expect(
+                    Ok(events) => {
+                        for event in events {
+                            println!("{event:?}");
+                            if event.kind == DebouncedEventKind::Any {
+                                let _build = std::process::Command::new("cargo")
+                                    .current_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/component"))
+                                    .args([
+                                        "component",
+                                        "build",
+                                        "--target",
+                                        "wasm32-unknown-unknown",
+                                    ])
+                                    .stdin(std::process::Stdio::null())
+                                    .output()
+                                    .expect("Failed to build component");
+                                println!("component built!");
+
+                                output.send(Message::Thaw).await.expect(
                                 "Couldn't send a WatchedFileChanged Message for some odd reason",
                             );
+                            }
                         }
                     }
                     Err(_) => {}
