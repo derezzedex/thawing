@@ -68,17 +68,25 @@ interface host {
   }
 }
 
+interface runtime {
+  use types.{closure, bytes};
+  use host.{message};
+
+  resource table {
+    constructor();
+    call: func(c: closure) -> message;
+    call-with: func(c: closure, state: bytes) -> message;
+  }
+}
+
 interface guest {
-  use types.{element, closure, bytes};
-  use host.{state, message};
+  use types.{element};
+  use host.{state};
 
   resource app {
     constructor();
 
     view: func(state: state) -> element;
-    
-    call: func(c: closure) -> message;
-    call-with: func(c: closure, state: bytes) -> message;
   }
 }
 
@@ -87,5 +95,6 @@ world thawing {
     import widget;
     import host;
 
+    export runtime;
     export guest;
 }

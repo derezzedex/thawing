@@ -110,6 +110,7 @@ pub(crate) struct State {
     store: Rc<RefCell<wasmtime::Store<InternalState>>>,
     bindings: Rc<RefCell<Thawing>>,
     app: Rc<RefCell<ResourceAny>>,
+    table: Rc<RefCell<ResourceAny>>,
 
     engine: wasmtime::Engine,
     component: Component,
@@ -127,6 +128,12 @@ impl State {
         let mut store = wasmtime::Store::new(&engine, InternalState::default());
         let bindings = Thawing::instantiate(&mut store, &component, &linker).unwrap();
 
+        let table = bindings
+            .thawing_core_runtime()
+            .table()
+            .call_constructor(&mut store)
+            .unwrap();
+
         let app = bindings
             .thawing_core_guest()
             .app()
@@ -137,6 +144,7 @@ impl State {
             store: Rc::new(RefCell::new(store)),
             bindings: Rc::new(RefCell::new(bindings)),
             app: Rc::new(RefCell::new(app)),
+            table: Rc::new(RefCell::new(table)),
             engine,
             component,
             linker,
@@ -146,11 +154,11 @@ impl State {
     pub fn call(&mut self, closure: u32) -> host::Message {
         self.bindings
             .borrow_mut()
-            .thawing_core_guest()
-            .app()
+            .thawing_core_runtime()
+            .table()
             .call_call(
                 &mut *self.store.borrow_mut(),
-                *self.app.borrow(),
+                *self.table.borrow(),
                 Resource::new_own(closure),
             )
             .unwrap()
@@ -159,11 +167,11 @@ impl State {
     pub fn call_with(&mut self, closure: u32, state: Bytes) -> host::Message {
         self.bindings
             .borrow_mut()
-            .thawing_core_guest()
-            .app()
+            .thawing_core_runtime()
+            .table()
             .call_call_with(
                 &mut *self.store.borrow_mut(),
-                *self.app.borrow(),
+                *self.table.borrow(),
                 Resource::new_own(closure),
                 &state,
             )
@@ -172,10 +180,18 @@ impl State {
 
     pub fn view(&self, state: host::State) -> iced::Element<'static, Message> {
         let mut store = self.store.borrow_mut();
+        self.table.borrow_mut().resource_drop(&mut *store).unwrap();
         self.app.borrow_mut().resource_drop(&mut *store).unwrap();
         *store = wasmtime::Store::new(&self.engine, InternalState::default());
         let mut bindings = self.bindings.borrow_mut();
         *bindings = Thawing::instantiate(&mut *store, &self.component, &self.linker).unwrap();
+
+        let mut table = self.table.borrow_mut();
+        *table = bindings
+            .thawing_core_runtime()
+            .table()
+            .call_constructor(&mut *store)
+            .unwrap();
 
         let mut app = self.app.borrow_mut();
         *app = bindings
