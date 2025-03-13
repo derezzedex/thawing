@@ -19,5 +19,5 @@ strip = true
 lto = true
 
 [package.metadata.component]
-package = "component:iced-thawing"
+package = "thawing:core"
 target = { path = "../wit" }

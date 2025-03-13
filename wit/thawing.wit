@@ -1,4 +1,4 @@
-package component:iced-thawing;
+package thawing:core;
 
 interface types {
   resource closure {

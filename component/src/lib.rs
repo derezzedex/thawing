@@ -1,12 +1,12 @@
 #[allow(warnings)]
 mod bindings;
 
-use bindings::component::iced_thawing;
-use bindings::exports::component::iced_thawing::guest;
-use iced_thawing::host;
-use iced_thawing::host::Message;
-use iced_thawing::types::Element;
-use iced_thawing::widget;
+use bindings::thawing::core;
+use bindings::exports::thawing::core::guest;
+use core::host;
+use core::host::Message;
+use core::types::Element;
+use core::widget;
 
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
