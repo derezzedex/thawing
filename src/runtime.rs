@@ -111,10 +111,6 @@ pub(crate) struct State {
     bindings: Rc<RefCell<Thawing>>,
     app: Rc<RefCell<ResourceAny>>,
     table: Rc<RefCell<ResourceAny>>,
-
-    engine: wasmtime::Engine,
-    component: Component,
-    linker: Linker<InternalState>,
 }
 
 impl State {
@@ -145,15 +141,12 @@ impl State {
             bindings: Rc::new(RefCell::new(bindings)),
             app: Rc::new(RefCell::new(app)),
             table: Rc::new(RefCell::new(table)),
-            engine,
-            component,
-            linker,
         }
     }
 
     pub fn call(&mut self, closure: u32) -> host::Message {
         self.bindings
-            .borrow_mut()
+            .borrow()
             .thawing_core_runtime()
             .table()
             .call_call(
@@ -180,35 +173,28 @@ impl State {
 
     pub fn view(&self, state: host::State) -> iced::Element<'static, Message> {
         let mut store = self.store.borrow_mut();
-        self.table.borrow_mut().resource_drop(&mut *store).unwrap();
-        self.app.borrow_mut().resource_drop(&mut *store).unwrap();
-        *store = wasmtime::Store::new(&self.engine, InternalState::default());
-        let mut bindings = self.bindings.borrow_mut();
-        *bindings = Thawing::instantiate(&mut *store, &self.component, &self.linker).unwrap();
-
         let mut table = self.table.borrow_mut();
-        *table = bindings
+        table.resource_drop(&mut *store).unwrap();
+
+        store.data_mut().element.clear();
+
+        *table = self
+            .bindings
+            .borrow()
             .thawing_core_runtime()
             .table()
             .call_constructor(&mut *store)
             .unwrap();
 
-        let mut app = self.app.borrow_mut();
-        *app = bindings
+        let view = self
+            .bindings
+            .borrow()
             .thawing_core_guest()
             .app()
-            .call_constructor(&mut *store)
+            .call_view(&mut *store, *self.app.borrow(), state)
             .unwrap();
 
-        let view = bindings
-            .thawing_core_guest()
-            .app()
-            .call_view(&mut *store, *app, state)
-            .unwrap();
-
-        let el = store.data_mut().element.remove(&view.rep()).unwrap();
-
-        el
+        store.data_mut().element.remove(&view.rep()).unwrap()
     }
 }
 
