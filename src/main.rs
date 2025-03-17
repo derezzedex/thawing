@@ -7,7 +7,7 @@ fn main() -> iced::Result {
         .run_with(Thawing::new)
 }
 
-pub const SRC_PATH: &'static str = "./component/src/lib.rs";
+pub const SRC_PATH: &'static str = "./component/src/app.rs";
 pub const WASM_PATH: &'static str =
     "./component/target/wasm32-unknown-unknown/debug/component.wasm";
 
@@ -84,7 +84,9 @@ impl Thawing {
                 self.inner.update(message.into());
             }
             runtime::Message::Thaw => {
+                let timer = std::time::Instant::now();
                 self.runtime = runtime::State::new(WASM_PATH);
+                println!("Runtime restarted in {:?}", timer.elapsed());
             }
         }
     }

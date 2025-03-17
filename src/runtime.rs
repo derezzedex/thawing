@@ -70,8 +70,8 @@ pub fn watch(path: impl AsRef<Path>) -> impl Stream<Item = Message> {
                 match res {
                     Ok(events) => {
                         for event in events {
-                            println!("{event:?}");
                             if event.kind == DebouncedEventKind::Any {
+                                let timer = std::time::Instant::now();
                                 let _build = std::process::Command::new("cargo")
                                     .current_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/component"))
                                     .args([
@@ -83,7 +83,7 @@ pub fn watch(path: impl AsRef<Path>) -> impl Stream<Item = Message> {
                                     .stdin(std::process::Stdio::null())
                                     .output()
                                     .expect("Failed to build component");
-                                println!("component built!");
+                                println!("Component built in {:?}", timer.elapsed());
 
                                 output.send(Message::Thaw).await.expect(
                                 "Couldn't send a WatchedFileChanged Message for some odd reason",
