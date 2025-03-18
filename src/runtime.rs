@@ -1,11 +1,13 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::time::Duration;
 
 use iced::futures;
 use iced::futures::channel::mpsc::{channel, Receiver};
 use iced::futures::{SinkExt, Stream, StreamExt};
+use iced::Task;
 use wasmtime::component::{Component, Linker, Resource, ResourceAny, ResourceTable};
 
 pub use core::host;
@@ -33,11 +35,12 @@ wasmtime::component::bindgen!({
     },
 });
 
-pub fn watch(path: impl AsRef<Path>) -> impl Stream<Item = Message> {
-    let path = path
-        .as_ref()
-        .canonicalize()
-        .expect("failed to canonicalize path");
+pub fn watch(path: impl AsRef<Path>) -> Task<Message> {
+    Task::stream(watch_file(path.as_ref()))
+}
+
+fn watch_file(path: &Path) -> impl Stream<Item = Message> {
+    let path = path.canonicalize().expect("failed to canonicalize path");
 
     use notify_debouncer_mini::notify::{self, RecommendedWatcher, RecursiveMode};
     use notify_debouncer_mini::{new_debouncer, DebouncedEvent, DebouncedEventKind, Debouncer};
@@ -85,7 +88,7 @@ pub fn watch(path: impl AsRef<Path>) -> impl Stream<Item = Message> {
                                     .expect("Failed to build component");
                                 println!("Component built in {:?}", timer.elapsed());
 
-                                output.send(Message::Thaw).await.expect(
+                                output.send(Message::Thawing(timer.elapsed())).await.expect(
                                 "Couldn't send a WatchedFileChanged Message for some odd reason",
                             );
                             }
@@ -103,20 +106,25 @@ pub enum Message {
     Direct(host::Message),
     Stateless(u32),
     Stateful(u32, Bytes),
-    Thaw,
+    Thawing(Duration),
 }
 
 pub(crate) struct State {
+    path: PathBuf,
     store: Rc<RefCell<wasmtime::Store<InternalState>>>,
     bindings: Rc<RefCell<Thawing>>,
     app: Rc<RefCell<ResourceAny>>,
     table: Rc<RefCell<ResourceAny>>,
+
+    engine: wasmtime::Engine,
+    linker: Linker<InternalState>,
 }
 
 impl State {
     pub fn new(path: impl AsRef<Path>) -> Self {
+        let path = path.as_ref().to_path_buf();
         let engine = wasmtime::Engine::default();
-        let component = Component::from_file(&engine, path).unwrap();
+        let component = Component::from_file(&engine, &path).unwrap();
 
         let mut linker = Linker::new(&engine);
         Thawing::add_to_linker(&mut linker, |state| state).unwrap();
@@ -137,11 +145,38 @@ impl State {
             .unwrap();
 
         Self {
+            path,
             store: Rc::new(RefCell::new(store)),
             bindings: Rc::new(RefCell::new(bindings)),
             app: Rc::new(RefCell::new(app)),
             table: Rc::new(RefCell::new(table)),
+            engine,
+            linker,
         }
+    }
+
+    pub fn thaw(&mut self) {
+        let component = Component::from_file(&self.engine, &self.path).unwrap();
+
+        let mut store = self.store.borrow_mut();
+        let mut bindings = self.bindings.borrow_mut();
+        *store = wasmtime::Store::new(&self.engine, InternalState::default());
+        *bindings = Thawing::instantiate(&mut *store, &component, &self.linker).unwrap();
+
+        let mut table = self.table.borrow_mut();
+        let mut app = self.app.borrow_mut();
+
+        *table = bindings
+            .thawing_core_runtime()
+            .table()
+            .call_constructor(&mut *store)
+            .unwrap();
+
+        *app = bindings
+            .thawing_core_guest()
+            .app()
+            .call_constructor(&mut *store)
+            .unwrap();
     }
 
     pub fn call(&mut self, closure: u32) -> host::Message {
@@ -171,7 +206,7 @@ impl State {
             .unwrap()
     }
 
-    pub fn view(&self, state: host::State) -> iced::Element<'static, Message> {
+    pub fn view(&self, state: impl Into<host::State>) -> iced::Element<'static, Message> {
         let mut store = self.store.borrow_mut();
         let mut table = self.table.borrow_mut();
         table.resource_drop(&mut *store).unwrap();
@@ -191,7 +226,7 @@ impl State {
             .borrow()
             .thawing_core_guest()
             .app()
-            .call_view(&mut *store, *self.app.borrow(), state)
+            .call_view(&mut *store, *self.app.borrow(), state.into())
             .unwrap();
 
         store.data_mut().element.remove(&view.rep()).unwrap()

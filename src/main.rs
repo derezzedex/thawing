@@ -18,22 +18,21 @@ pub enum Message {
     Decrement(i64),
 }
 
-impl From<Message> for runtime::host::Message {
-    fn from(msg: Message) -> Self {
-        match msg {
-            Message::Toggled(is_checked) => runtime::host::Message::Toggled(is_checked),
-            Message::Increment(n) => runtime::host::Message::Increment(n),
-            Message::Decrement(n) => runtime::host::Message::Decrement(n),
-        }
-    }
-}
-
 impl From<runtime::host::Message> for Message {
     fn from(msg: runtime::host::Message) -> Self {
         match msg {
             runtime::host::Message::Toggled(is_checked) => Message::Toggled(is_checked),
             runtime::host::Message::Increment(n) => Message::Increment(n),
             runtime::host::Message::Decrement(n) => Message::Decrement(n),
+        }
+    }
+}
+
+impl From<&Counter> for runtime::host::State {
+    fn from(state: &Counter) -> Self {
+        Self {
+            counter: state.value,
+            toggled: state.is_checked,
         }
     }
 }
@@ -55,7 +54,7 @@ impl Counter {
 }
 
 struct Thawing {
-    inner: Counter,
+    state: Counter,
     runtime: runtime::State,
 }
 
@@ -63,39 +62,35 @@ impl Thawing {
     fn new() -> (Self, Task<runtime::Message>) {
         (
             Self {
-                inner: Counter::default(),
+                state: Counter::default(),
                 runtime: runtime::State::new(WASM_PATH),
             },
-            Task::stream(runtime::watch(SRC_PATH)),
+            runtime::watch(SRC_PATH),
         )
     }
 
     fn update(&mut self, message: runtime::Message) {
         match message {
             runtime::Message::Direct(message) => {
-                self.inner.update(message.into());
+                self.state.update(message.into());
             }
             runtime::Message::Stateless(id) => {
                 let message = self.runtime.call(id);
-                self.inner.update(message.into());
+                self.state.update(message.into());
             }
             runtime::Message::Stateful(id, state) => {
                 let message = self.runtime.call_with(id, state);
-                self.inner.update(message.into());
+                self.state.update(message.into());
             }
-            runtime::Message::Thaw => {
+            runtime::Message::Thawing(elapsed) => {
                 let timer = std::time::Instant::now();
-                self.runtime = runtime::State::new(WASM_PATH);
-                println!("Runtime restarted in {:?}", timer.elapsed());
+                self.runtime.thaw();
+                println!("Application thawed in {:?}", timer.elapsed() + elapsed);
             }
         }
     }
 
     fn view(&self) -> iced::Element<runtime::Message> {
-        let state = runtime::host::State {
-            counter: self.inner.value,
-            toggled: self.inner.is_checked,
-        };
-        self.runtime.view(state)
+        self.runtime.view(&self.state)
     }
 }
