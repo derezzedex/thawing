@@ -11,8 +11,57 @@ use iced::Task;
 use wasmtime::component::{Component, Linker, Resource, ResourceAny, ResourceTable};
 
 pub use core::host;
-use core::types::{Color, Pixels};
+use core::types::{Color, Horizontal, Length, Padding, Pixels};
 use thawing::core;
+
+impl From<Pixels> for iced::Pixels {
+    fn from(pixels: Pixels) -> Self {
+        iced::Pixels(pixels.amount)
+    }
+}
+
+impl From<Padding> for iced::Padding {
+    fn from(padding: Padding) -> Self {
+        iced::Padding {
+            top: padding.top,
+            right: padding.right,
+            bottom: padding.top,
+            left: padding.left,
+        }
+    }
+}
+
+impl From<Color> for iced::Color {
+    fn from(color: Color) -> Self {
+        iced::Color {
+            r: color.r,
+            g: color.g,
+            b: color.b,
+            a: color.a,
+        }
+    }
+}
+
+impl From<Length> for iced::Length {
+    fn from(length: Length) -> Self {
+        match length {
+            Length::Fill => iced::Length::Fill,
+            Length::FillPortion(portion) => iced::Length::FillPortion(portion),
+            Length::Fixed(amount) => iced::Length::Fixed(amount),
+            Length::Shrink => iced::Length::Shrink,
+        }
+    }
+}
+
+impl From<Horizontal> for iced::alignment::Horizontal {
+    fn from(align: Horizontal) -> Self {
+        match align {
+            Horizontal::Left => iced::alignment::Horizontal::Left,
+            Horizontal::Center => iced::alignment::Horizontal::Center,
+            Horizontal::Right => iced::alignment::Horizontal::Right,
+        }
+    }
+}
 
 pub type IcedColumn = iced::widget::Column<'static, Message>;
 pub type IcedButton = iced::widget::Button<'static, Message>;
@@ -372,6 +421,137 @@ impl core::widget::HostColumn for InternalState {
         i
     }
 
+    fn from_vec(
+        &mut self,
+        children: Vec<wasmtime::component::Resource<core::widget::Element>>,
+    ) -> wasmtime::component::Resource<core::widget::Column> {
+        let capacity = children.capacity();
+        let children =
+            children
+                .into_iter()
+                .fold(Vec::with_capacity(capacity), |mut children, element| {
+                    children.push(self.element.remove(&element.rep()).unwrap());
+                    children
+                });
+
+        let i = self.table.push(()).unwrap();
+        self.element
+            .insert(i.rep(), IcedColumn::from_vec(children).into());
+        i
+    }
+
+    fn spacing(
+        &mut self,
+        column: wasmtime::component::Resource<core::widget::Column>,
+        amount: Pixels,
+    ) -> wasmtime::component::Resource<core::widget::Column> {
+        let mut widget = self
+            .element
+            .remove(&column.rep())
+            .unwrap()
+            .downcast::<IcedColumn>();
+        *widget = widget.spacing(amount);
+        self.element.insert(column.rep(), (*widget).into());
+
+        Resource::new_own(column.rep())
+    }
+
+    fn padding(
+        &mut self,
+        column: wasmtime::component::Resource<core::widget::Column>,
+        padding: Padding,
+    ) -> wasmtime::component::Resource<core::widget::Column> {
+        let mut widget = self
+            .element
+            .remove(&column.rep())
+            .unwrap()
+            .downcast::<IcedColumn>();
+        *widget = widget.padding(padding);
+        self.element.insert(column.rep(), (*widget).into());
+
+        Resource::new_own(column.rep())
+    }
+
+    fn width(
+        &mut self,
+        column: wasmtime::component::Resource<core::widget::Column>,
+        width: Length,
+    ) -> wasmtime::component::Resource<core::widget::Column> {
+        let mut widget = self
+            .element
+            .remove(&column.rep())
+            .unwrap()
+            .downcast::<IcedColumn>();
+        *widget = widget.width(width);
+        self.element.insert(column.rep(), (*widget).into());
+
+        Resource::new_own(column.rep())
+    }
+
+    fn height(
+        &mut self,
+        column: wasmtime::component::Resource<core::widget::Column>,
+        height: Length,
+    ) -> wasmtime::component::Resource<core::widget::Column> {
+        let mut widget = self
+            .element
+            .remove(&column.rep())
+            .unwrap()
+            .downcast::<IcedColumn>();
+        *widget = widget.height(height);
+        self.element.insert(column.rep(), (*widget).into());
+
+        Resource::new_own(column.rep())
+    }
+
+    fn max_width(
+        &mut self,
+        column: wasmtime::component::Resource<core::widget::Column>,
+        width: Pixels,
+    ) -> wasmtime::component::Resource<core::widget::Column> {
+        let mut widget = self
+            .element
+            .remove(&column.rep())
+            .unwrap()
+            .downcast::<IcedColumn>();
+        *widget = widget.max_width(width);
+        self.element.insert(column.rep(), (*widget).into());
+
+        Resource::new_own(column.rep())
+    }
+
+    fn align_x(
+        &mut self,
+        column: wasmtime::component::Resource<core::widget::Column>,
+        align: Horizontal,
+    ) -> wasmtime::component::Resource<core::widget::Column> {
+        let mut widget = self
+            .element
+            .remove(&column.rep())
+            .unwrap()
+            .downcast::<IcedColumn>();
+        *widget = widget.align_x(align);
+        self.element.insert(column.rep(), (*widget).into());
+
+        Resource::new_own(column.rep())
+    }
+
+    fn clip(
+        &mut self,
+        column: wasmtime::component::Resource<core::widget::Column>,
+        clip: bool,
+    ) -> wasmtime::component::Resource<core::widget::Column> {
+        let mut widget = self
+            .element
+            .remove(&column.rep())
+            .unwrap()
+            .downcast::<IcedColumn>();
+        *widget = widget.clip(clip);
+        self.element.insert(column.rep(), (*widget).into());
+
+        Resource::new_own(column.rep())
+    }
+
     fn push(
         &mut self,
         column: Resource<core::widget::Column>,
@@ -387,6 +567,31 @@ impl core::widget::HostColumn for InternalState {
             .unwrap()
             .downcast::<IcedColumn>();
         *widget = widget.push(content);
+        self.element.insert(column.rep(), (*widget).into());
+
+        Resource::new_own(column.rep())
+    }
+
+    fn extend(
+        &mut self,
+        column: Resource<core::widget::Column>,
+        children: Vec<Resource<core::widget::Element>>,
+    ) -> Resource<core::widget::Column> {
+        let capacity = children.capacity();
+        let children =
+            children
+                .into_iter()
+                .fold(Vec::with_capacity(capacity), |mut children, element| {
+                    children.push(self.element.remove(&element.rep()).unwrap());
+                    children
+                });
+
+        let mut widget = self
+            .element
+            .remove(&column.rep())
+            .unwrap()
+            .downcast::<IcedColumn>();
+        *widget = widget.extend(children);
         self.element.insert(column.rep(), (*widget).into());
 
         Resource::new_own(column.rep())
@@ -437,12 +642,7 @@ impl core::widget::HostText for InternalState {
             .remove(&text.rep())
             .unwrap()
             .downcast::<IcedText>();
-        *widget = widget.color(iced::Color {
-            r: color.r,
-            g: color.g,
-            b: color.b,
-            a: color.a,
-        });
+        *widget = widget.color(color);
         self.element.insert(text.rep(), (*widget).into());
 
         Resource::new_own(text.rep())

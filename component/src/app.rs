@@ -1,6 +1,6 @@
 use crate::host::{Message, State};
-use crate::widget::{Button, Checkbox, Column, Text};
-use crate::{Application, Element};
+use crate::widget::{button, column, text};
+use crate::{Application, Center, Element};
 
 pub struct MyApp;
 
@@ -10,17 +10,13 @@ impl Application for MyApp {
     }
 
     fn view(&self, state: State) -> Element {
-        Column::new()
-            .push(Checkbox::new("stateful closure test", state.toggled).on_toggle(Message::Toggled))
-            .push(
-                Button::new(Text::new("Increment"))
-                    .on_press_with(move || Message::Increment(state.counter)),
-            )
-            .push(Text::new(state.counter).size(50.0))
-            .push(
-                Button::new(Text::new("Decrement"))
-                    .on_press_with(move || Message::Decrement(state.counter)),
-            )
-            .into()
+        column![
+            button("Increment").on_press(Message::Increment),
+            text(state.counter).size(50),
+            button("Decrement").on_press(Message::Decrement)
+        ]
+        .padding(20)
+        .align_x(Center)
+        .into()
     }
 }

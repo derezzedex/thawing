@@ -10,7 +10,10 @@ interface types {
   resource element {}
 
   type bytes = list<u8>;
-  type pixels = f32;
+  
+  record pixels {
+    amount: f32,
+  }
 
   record color {
     r: f32,
@@ -18,10 +21,30 @@ interface types {
     b: f32,
     a: f32
   }
+
+  record padding {
+    top: f32,
+    right: f32,
+    bottom: f32,
+    left: f32,
+  }
+
+  variant length {
+    fill,
+    fill-portion(u16),
+    shrink,
+    fixed(f32),
+  }
+
+  enum horizontal {
+    left,
+    center,
+    right,
+  }
 }
 
 interface widget {
-  use types.{element, closure, pixels, color};
+  use types.{element, closure, pixels, padding, length, horizontal, color};
   use host.{message};
 
   resource button {
@@ -41,8 +64,19 @@ interface widget {
 
   resource column {
     constructor();
+    from-vec: static func(children: list<element>) -> column;
+
+    spacing: func(amount: pixels) -> column;
+    padding: func(padding: padding) -> column;
+    width: func(width: length) -> column;
+    height: func(height: length) -> column;
+    max-width: func(width: pixels) -> column;
+    align-x: func(align: horizontal) -> column;
+    clip: func(clip: bool) -> column;
 
     push: func(child: element) -> column;
+    extend: func(children: list<element>) -> column;
+
     into-element: func() -> element;
   }
 
@@ -63,8 +97,8 @@ interface host {
 
   variant message {
     toggled(bool),
-    increment(s64),
-    decrement(s64),
+    increment,
+    decrement,
   }
 }
 

@@ -14,16 +14,16 @@ pub const WASM_PATH: &'static str =
 #[derive(Debug, Clone)]
 pub enum Message {
     Toggled(bool),
-    Increment(i64),
-    Decrement(i64),
+    Increment,
+    Decrement,
 }
 
 impl From<runtime::host::Message> for Message {
     fn from(msg: runtime::host::Message) -> Self {
         match msg {
             runtime::host::Message::Toggled(is_checked) => Message::Toggled(is_checked),
-            runtime::host::Message::Increment(n) => Message::Increment(n),
-            runtime::host::Message::Decrement(n) => Message::Decrement(n),
+            runtime::host::Message::Increment => Message::Increment,
+            runtime::host::Message::Decrement => Message::Decrement,
         }
     }
 }
@@ -47,8 +47,8 @@ impl Counter {
     fn update(&mut self, message: Message) {
         match message {
             Message::Toggled(is_checked) => self.is_checked = is_checked,
-            Message::Increment(_n) => self.value += 1,
-            Message::Decrement(_n) => self.value -= 1,
+            Message::Increment => self.value += 1,
+            Message::Decrement => self.value -= 1,
         }
     }
 }
