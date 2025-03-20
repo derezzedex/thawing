@@ -100,7 +100,7 @@ fn watch_file(path: &Path) -> impl Stream<Item = Message> {
     )> {
         let (mut tx, rx) = channel(1);
 
-        let watcher = new_debouncer(std::time::Duration::from_secs(1), move |res| {
+        let watcher = new_debouncer(std::time::Duration::from_millis(500), move |res| {
             futures::executor::block_on(async {
                 tx.send(res).await.unwrap();
             })
@@ -123,9 +123,10 @@ fn watch_file(path: &Path) -> impl Stream<Item = Message> {
                     Ok(events) => {
                         for event in events {
                             if event.kind == DebouncedEventKind::Any {
+                                println!("Building component...");
                                 let timer = std::time::Instant::now();
                                 let _build = std::process::Command::new("cargo")
-                                    .current_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/component"))
+                                    .current_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/example"))
                                     .args([
                                         "component",
                                         "build",

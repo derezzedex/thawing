@@ -3,55 +3,20 @@ use std::sync::{LazyLock, Mutex};
 
 use crate::bindings::exports::thawing::core::guest;
 use crate::bindings::exports::thawing::core::runtime;
-use crate::core::host::Message;
 
 pub use guest::GuestApp as Application;
 
 pub static TABLE: LazyLock<Mutex<HashMap<u32, Closure>>> =
     LazyLock::new(|| Mutex::new(HashMap::default()));
 
-pub struct Component;
-
-crate::bindings::export!(Component with_types_in crate::bindings);
-
-impl guest::Guest for Component {
-    type App = crate::app::MyApp;
-}
-
-impl runtime::Guest for Component {
-    type Table = Table;
-}
-
-pub struct Table;
-
-impl runtime::GuestTable for Table {
-    fn new() -> Self {
-        TABLE.lock().unwrap().clear();
-
-        Table
-    }
-
-    fn call(&self, c: runtime::Closure) -> Message {
-        let table = TABLE.lock().unwrap();
-        let closure = table.get(&c.id()).unwrap();
-        closure.call().downcast()
-    }
-
-    fn call_with(&self, c: runtime::Closure, state: runtime::Bytes) -> Message {
-        let table = TABLE.lock().unwrap();
-        let closure = table.get(&c.id()).unwrap();
-        closure.call_with(AnyBox::new(state)).downcast()
-    }
-}
-
 pub struct AnyBox(Box<dyn std::any::Any>);
 
 impl AnyBox {
-    fn new<T: 'static>(value: T) -> Self {
+    pub fn new<T: 'static>(value: T) -> Self {
         Self(Box::new(value))
     }
 
-    fn downcast<T: 'static>(self) -> T {
+    pub fn downcast<T: 'static>(self) -> T {
         *self.0.downcast::<T>().unwrap()
     }
 }
@@ -87,11 +52,11 @@ impl Closure {
         }
     }
 
-    fn call_with(&self, state: AnyBox) -> AnyBox {
+    pub fn call_with(&self, state: AnyBox) -> AnyBox {
         (self.func)(state)
     }
 
-    fn call(&self) -> AnyBox {
+    pub fn call(&self) -> AnyBox {
         (self.func)(AnyBox::new(()))
     }
 }

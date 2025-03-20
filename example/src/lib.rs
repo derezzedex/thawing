@@ -1,6 +1,6 @@
-use crate::host::{Message, State};
-use crate::widget::{button, column, text};
-use crate::{Application, Center, Element};
+use thawing::host::{Message, State};
+use thawing::widget::{button, column, text};
+use thawing::{Application, Center, Element};
 
 pub struct MyApp;
 
@@ -20,3 +20,5 @@ impl Application for MyApp {
         .into()
     }
 }
+
+thawing::thaw!(MyApp);

@@ -7,9 +7,9 @@ fn main() -> iced::Result {
         .run_with(Thawing::new)
 }
 
-pub const SRC_PATH: &'static str = "./component/src/app.rs";
+pub const SRC_PATH: &'static str = "./example/src/lib.rs";
 pub const WASM_PATH: &'static str =
-    "./component/target/wasm32-unknown-unknown/debug/component.wasm";
+    "./example/target/wasm32-unknown-unknown/debug/thawing_example.wasm";
 
 #[derive(Debug, Clone)]
 pub enum Message {

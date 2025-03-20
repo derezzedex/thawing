@@ -1,7 +1,51 @@
 #[allow(warnings)]
-pub(crate) mod bindings;
+pub mod bindings;
 
-mod app;
+#[macro_export]
+macro_rules! thaw {
+    ($ty: ident) => {
+        use $crate::{bindings, runtime};
+        use bindings::exports::thawing::core::guest;
+        use bindings::exports::thawing::core::runtime as wasm;
+
+        #[doc(hidden)]
+        struct _Component;
+
+        #[doc(hidden)]
+        struct _Table;
+
+        impl wasm::Guest for _Component {
+            type Table = _Table;
+        }
+
+        impl wasm::GuestTable for _Table {
+            fn new() -> Self {
+                runtime::TABLE.lock().unwrap().clear();
+
+                _Table
+            }
+
+            fn call(&self, c: wasm::Closure) -> bindings::thawing::core::host::Message {
+                let table = runtime::TABLE.lock().unwrap();
+                let closure = table.get(&c.id()).unwrap();
+                closure.call().downcast()
+            }
+
+            fn call_with(&self, c: wasm::Closure, state: wasm::Bytes) -> bindings::thawing::core::host::Message {
+                let table = runtime::TABLE.lock().unwrap();
+                let closure = table.get(&c.id()).unwrap();
+                closure.call_with(runtime::AnyBox::new(state)).downcast()
+            }
+        }
+
+        impl guest::Guest for _Component {
+            type App = $ty;
+        }
+
+        bindings::export!(_Component with_types_in bindings);
+    }
+}
+
 pub mod runtime;
 
 #[path = "widget.rs"]
