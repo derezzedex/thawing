@@ -3,6 +3,8 @@ mod types;
 mod widget;
 
 fn main() -> iced::Result {
+    tracing_subscriber::fmt::init();
+
     iced::application("A cool counter [thawing]", Thawing::update, Thawing::view)
         .run_with(Thawing::new)
 }
@@ -85,7 +87,7 @@ impl Thawing {
             runtime::Message::Thawing(elapsed) => {
                 let timer = std::time::Instant::now();
                 self.runtime.thaw();
-                println!("Application thawed in {:?}", timer.elapsed() + elapsed);
+                tracing::info!("Application thawed in {:?}", timer.elapsed() + elapsed);
             }
         }
     }

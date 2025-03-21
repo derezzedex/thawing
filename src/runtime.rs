@@ -1,13 +1,16 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 use std::rc::Rc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use iced::futures;
-use iced::futures::channel::mpsc::{channel, Receiver};
+use iced::futures::channel::mpsc::channel;
 use iced::futures::{SinkExt, Stream, StreamExt};
 use iced::Task;
+use notify_debouncer_mini::notify::RecursiveMode;
+use notify_debouncer_mini::{new_debouncer, DebouncedEventKind};
 use wasmtime::component::{Component, Linker, Resource, ResourceAny, ResourceTable};
 
 pub use core::host;
@@ -238,61 +241,51 @@ impl core::types::HostClosure for InternalState {
 fn watch_file(path: &Path) -> impl Stream<Item = Message> {
     let path = path.canonicalize().expect("failed to canonicalize path");
 
-    use notify_debouncer_mini::notify::{self, RecommendedWatcher, RecursiveMode};
-    use notify_debouncer_mini::{new_debouncer, DebouncedEvent, DebouncedEventKind, Debouncer};
-
-    pub fn async_debouncer() -> notify::Result<(
-        Debouncer<RecommendedWatcher>,
-        Receiver<notify::Result<Vec<DebouncedEvent>>>,
-    )> {
-        let (mut tx, rx) = channel(1);
-
-        let watcher = new_debouncer(std::time::Duration::from_millis(500), move |res| {
-            futures::executor::block_on(async {
-                tx.send(res).await.unwrap();
-            })
-        })?;
-
-        Ok((watcher, rx))
-    }
-
     iced::stream::channel(10, |mut output| async move {
-        let (mut debouncer, mut rx) = async_debouncer().expect("Failed to create watcher");
+        let (mut tx, mut rx) = channel(1);
+
+        let mut debouncer = new_debouncer(Duration::from_millis(500), move |res| {
+            futures::executor::block_on(async {
+                tx.send(res).await.expect("Failed to send debounce event");
+            })
+        })
+        .expect("Failed to create file watcher");
+
         debouncer
             .watcher()
-            .watch(path.as_ref(), RecursiveMode::NonRecursive)
-            .unwrap_or_else(|_| panic!("Failed to watch path {path:?}"));
-        println!("Watching {path:?}");
+            .watch(&path, RecursiveMode::NonRecursive)
+            .expect("Failed to watch path");
+
+        tracing::info!("Watching {path:?}");
 
         loop {
-            while let Some(res) = rx.next().await {
-                match res {
-                    Ok(events) => {
-                        for event in events {
-                            if event.kind == DebouncedEventKind::Any {
-                                println!("Building component...");
-                                let timer = std::time::Instant::now();
-                                let _build = std::process::Command::new("cargo")
-                                    .current_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/example"))
-                                    .args([
-                                        "component",
-                                        "build",
-                                        "--target",
-                                        "wasm32-unknown-unknown",
-                                    ])
-                                    .stdin(std::process::Stdio::null())
-                                    .output()
-                                    .expect("Failed to build component");
-                                println!("Component built in {:?}", timer.elapsed());
+            for _ in rx
+                .next()
+                .await
+                .map(Result::ok)
+                .flatten()
+                .into_iter()
+                .flat_map(|events| {
+                    events
+                        .into_iter()
+                        .filter(|event| event.kind == DebouncedEventKind::Any)
+                })
+                .collect::<Vec<_>>()
+            {
+                tracing::info!("Building component...");
+                let timer = Instant::now();
+                Command::new("cargo")
+                    .args(["component", "build", "--target", "wasm32-unknown-unknown"])
+                    .current_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/example"))
+                    .stdin(Stdio::null())
+                    .output()
+                    .expect("Failed to build component");
+                tracing::info!("Component built in {:?}", timer.elapsed());
 
-                                output.send(Message::Thawing(timer.elapsed())).await.expect(
-                                "Couldn't send a WatchedFileChanged Message for some odd reason",
-                            );
-                            }
-                        }
-                    }
-                    Err(_) => {}
-                }
+                output
+                    .send(Message::Thawing(timer.elapsed()))
+                    .await
+                    .expect("Failed to send message");
             }
         }
     })
