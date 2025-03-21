@@ -1,6 +1,6 @@
-use iced::Task;
-
 mod runtime;
+mod types;
+mod widget;
 
 fn main() -> iced::Result {
     iced::application("A cool counter [thawing]", Thawing::update, Thawing::view)
@@ -59,7 +59,7 @@ struct Thawing {
 }
 
 impl Thawing {
-    fn new() -> (Self, Task<runtime::Message>) {
+    fn new() -> (Self, iced::Task<runtime::Message>) {
         (
             Self {
                 state: Counter::default(),

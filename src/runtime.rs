@@ -11,63 +11,7 @@ use iced::Task;
 use wasmtime::component::{Component, Linker, Resource, ResourceAny, ResourceTable};
 
 pub use core::host;
-use core::types::{Color, Horizontal, Length, Padding, Pixels};
 use thawing::core;
-
-impl From<Pixels> for iced::Pixels {
-    fn from(pixels: Pixels) -> Self {
-        iced::Pixels(pixels.amount)
-    }
-}
-
-impl From<Padding> for iced::Padding {
-    fn from(padding: Padding) -> Self {
-        iced::Padding {
-            top: padding.top,
-            right: padding.right,
-            bottom: padding.top,
-            left: padding.left,
-        }
-    }
-}
-
-impl From<Color> for iced::Color {
-    fn from(color: Color) -> Self {
-        iced::Color {
-            r: color.r,
-            g: color.g,
-            b: color.b,
-            a: color.a,
-        }
-    }
-}
-
-impl From<Length> for iced::Length {
-    fn from(length: Length) -> Self {
-        match length {
-            Length::Fill => iced::Length::Fill,
-            Length::FillPortion(portion) => iced::Length::FillPortion(portion),
-            Length::Fixed(amount) => iced::Length::Fixed(amount),
-            Length::Shrink => iced::Length::Shrink,
-        }
-    }
-}
-
-impl From<Horizontal> for iced::alignment::Horizontal {
-    fn from(align: Horizontal) -> Self {
-        match align {
-            Horizontal::Left => iced::alignment::Horizontal::Left,
-            Horizontal::Center => iced::alignment::Horizontal::Center,
-            Horizontal::Right => iced::alignment::Horizontal::Right,
-        }
-    }
-}
-
-pub type IcedColumn = iced::widget::Column<'static, Message>;
-pub type IcedButton = iced::widget::Button<'static, Message>;
-pub type IcedText = iced::widget::Text<'static>;
-pub type IcedCheckbox = iced::widget::Checkbox<'static, Message>;
-pub type IcedElement = iced::Element<'static, Message>;
 
 pub type Empty = ();
 pub type Bytes = Vec<u8>;
@@ -86,69 +30,6 @@ wasmtime::component::bindgen!({
 
 pub fn watch(path: impl AsRef<Path>) -> Task<Message> {
     Task::stream(watch_file(path.as_ref()))
-}
-
-fn watch_file(path: &Path) -> impl Stream<Item = Message> {
-    let path = path.canonicalize().expect("failed to canonicalize path");
-
-    use notify_debouncer_mini::notify::{self, RecommendedWatcher, RecursiveMode};
-    use notify_debouncer_mini::{new_debouncer, DebouncedEvent, DebouncedEventKind, Debouncer};
-
-    pub fn async_debouncer() -> notify::Result<(
-        Debouncer<RecommendedWatcher>,
-        Receiver<notify::Result<Vec<DebouncedEvent>>>,
-    )> {
-        let (mut tx, rx) = channel(1);
-
-        let watcher = new_debouncer(std::time::Duration::from_millis(500), move |res| {
-            futures::executor::block_on(async {
-                tx.send(res).await.unwrap();
-            })
-        })?;
-
-        Ok((watcher, rx))
-    }
-
-    iced::stream::channel(10, |mut output| async move {
-        let (mut debouncer, mut rx) = async_debouncer().expect("Failed to create watcher");
-        debouncer
-            .watcher()
-            .watch(path.as_ref(), RecursiveMode::NonRecursive)
-            .unwrap_or_else(|_| panic!("Failed to watch path {path:?}"));
-        println!("Watching {path:?}");
-
-        loop {
-            while let Some(res) = rx.next().await {
-                match res {
-                    Ok(events) => {
-                        for event in events {
-                            if event.kind == DebouncedEventKind::Any {
-                                println!("Building component...");
-                                let timer = std::time::Instant::now();
-                                let _build = std::process::Command::new("cargo")
-                                    .current_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/example"))
-                                    .args([
-                                        "component",
-                                        "build",
-                                        "--target",
-                                        "wasm32-unknown-unknown",
-                                    ])
-                                    .stdin(std::process::Stdio::null())
-                                    .output()
-                                    .expect("Failed to build component");
-                                println!("Component built in {:?}", timer.elapsed());
-
-                                output.send(Message::Thawing(timer.elapsed())).await.expect(
-                                "Couldn't send a WatchedFileChanged Message for some odd reason",
-                            );
-                            }
-                        }
-                    }
-                    Err(_) => {}
-                }
-            }
-        }
-    })
 }
 
 #[derive(Debug, Clone)]
@@ -284,16 +165,53 @@ impl State {
 }
 
 type Table<T> = HashMap<u32, T>;
+pub type Element = iced::Element<'static, Message>;
 
 #[derive(Default)]
-struct InternalState {
-    table: ResourceTable,
-    element: Table<IcedElement>,
+pub(crate) struct InternalState {
+    pub(crate) table: ResourceTable,
+    pub(crate) element: Table<Element>,
+}
+
+impl InternalState {
+    pub fn push<W>(&mut self, widget: W) -> Resource<Empty>
+    where
+        W: Into<Element>,
+    {
+        let res = self.table.push(()).unwrap();
+        self.element.insert(res.rep(), widget.into());
+        res
+    }
+
+    pub fn get<R>(&mut self, element: &Resource<R>) -> Element
+    where
+        R: 'static,
+    {
+        self.element.remove(&element.rep()).unwrap()
+    }
+
+    pub fn get_widget<W, R>(&mut self, element: &Resource<R>) -> W
+    where
+        R: 'static,
+        W: iced::advanced::Widget<Message, iced::Theme, iced::Renderer>,
+    {
+        *self.get(element).downcast::<W>()
+    }
+
+    pub fn insert<E, R>(&mut self, resource: Resource<R>, widget: E) -> Resource<R>
+    where
+        R: 'static,
+        E: Into<Element>,
+    {
+        self.element.insert(resource.rep(), widget.into());
+        Resource::new_own(resource.rep())
+    }
 }
 
 impl core::host::Host for InternalState {}
-
+impl core::widget::Host for InternalState {}
 impl core::types::Host for InternalState {}
+
 impl core::types::HostElement for InternalState {
     fn drop(&mut self, element: Resource<core::types::Element>) -> wasmtime::Result<()> {
         self.element.remove(&element.rep());
@@ -317,346 +235,65 @@ impl core::types::HostClosure for InternalState {
     }
 }
 
-impl core::widget::Host for InternalState {}
+fn watch_file(path: &Path) -> impl Stream<Item = Message> {
+    let path = path.canonicalize().expect("failed to canonicalize path");
 
-impl core::widget::HostCheckbox for InternalState {
-    fn new(&mut self, label: String, is_checked: bool) -> Resource<core::widget::Checkbox> {
-        let checkbox = IcedCheckbox::new(label, is_checked);
+    use notify_debouncer_mini::notify::{self, RecommendedWatcher, RecursiveMode};
+    use notify_debouncer_mini::{new_debouncer, DebouncedEvent, DebouncedEventKind, Debouncer};
 
-        let i = self.table.push(()).unwrap();
-        self.element.insert(i.rep(), checkbox.into());
-        i
+    pub fn async_debouncer() -> notify::Result<(
+        Debouncer<RecommendedWatcher>,
+        Receiver<notify::Result<Vec<DebouncedEvent>>>,
+    )> {
+        let (mut tx, rx) = channel(1);
+
+        let watcher = new_debouncer(std::time::Duration::from_millis(500), move |res| {
+            futures::executor::block_on(async {
+                tx.send(res).await.unwrap();
+            })
+        })?;
+
+        Ok((watcher, rx))
     }
 
-    fn on_toggle(
-        &mut self,
-        checkbox: Resource<core::widget::Checkbox>,
-        closure: Resource<core::types::Closure>,
-    ) -> Resource<core::widget::Checkbox> {
-        let mut widget = self
-            .element
-            .remove(&checkbox.rep())
-            .unwrap()
-            .downcast::<IcedCheckbox>();
-        *widget = widget.on_toggle(move |is_checked| {
-            Message::Stateful(closure.rep(), bincode::serialize(&is_checked).unwrap())
-        });
-        self.element.insert(checkbox.rep(), (*widget).into());
+    iced::stream::channel(10, |mut output| async move {
+        let (mut debouncer, mut rx) = async_debouncer().expect("Failed to create watcher");
+        debouncer
+            .watcher()
+            .watch(path.as_ref(), RecursiveMode::NonRecursive)
+            .unwrap_or_else(|_| panic!("Failed to watch path {path:?}"));
+        println!("Watching {path:?}");
 
-        Resource::new_own(checkbox.rep())
-    }
+        loop {
+            while let Some(res) = rx.next().await {
+                match res {
+                    Ok(events) => {
+                        for event in events {
+                            if event.kind == DebouncedEventKind::Any {
+                                println!("Building component...");
+                                let timer = std::time::Instant::now();
+                                let _build = std::process::Command::new("cargo")
+                                    .current_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/example"))
+                                    .args([
+                                        "component",
+                                        "build",
+                                        "--target",
+                                        "wasm32-unknown-unknown",
+                                    ])
+                                    .stdin(std::process::Stdio::null())
+                                    .output()
+                                    .expect("Failed to build component");
+                                println!("Component built in {:?}", timer.elapsed());
 
-    fn into_element(
-        &mut self,
-        button: Resource<core::widget::Checkbox>,
-    ) -> Resource<core::widget::Element> {
-        Resource::new_own(button.rep())
-    }
-
-    fn drop(&mut self, _button: Resource<core::widget::Checkbox>) -> wasmtime::Result<()> {
-        Ok(())
-    }
-}
-
-impl core::widget::HostButton for InternalState {
-    fn new(&mut self, content: Resource<core::widget::Element>) -> Resource<core::widget::Button> {
-        let content = self
-            .element
-            .remove(&content.rep())
-            .expect("button content not found");
-        let button = IcedButton::new(content);
-
-        let i = self.table.push(()).unwrap();
-        self.element.insert(i.rep(), button.into());
-        i
-    }
-
-    fn on_press(
-        &mut self,
-        button: Resource<core::widget::Button>,
-        message: host::Message,
-    ) -> Resource<core::widget::Button> {
-        let mut widget = self
-            .element
-            .remove(&button.rep())
-            .unwrap()
-            .downcast::<IcedButton>();
-        *widget = widget.on_press(Message::Direct(message));
-        self.element.insert(button.rep(), (*widget).into());
-
-        Resource::new_own(button.rep())
-    }
-
-    fn on_press_with(
-        &mut self,
-        button: Resource<core::widget::Button>,
-        closure: Resource<core::types::Closure>,
-    ) -> Resource<core::widget::Button> {
-        let mut widget = self
-            .element
-            .remove(&button.rep())
-            .unwrap()
-            .downcast::<IcedButton>();
-        *widget = widget.on_press_with(move || Message::Stateless(closure.rep()));
-        self.element.insert(button.rep(), (*widget).into());
-
-        Resource::new_own(button.rep())
-    }
-
-    fn into_element(
-        &mut self,
-        button: Resource<core::widget::Button>,
-    ) -> Resource<core::widget::Element> {
-        Resource::new_own(button.rep())
-    }
-
-    fn drop(&mut self, _button: Resource<core::widget::Button>) -> wasmtime::Result<()> {
-        Ok(())
-    }
-}
-
-impl core::widget::HostColumn for InternalState {
-    fn new(&mut self) -> Resource<core::widget::Column> {
-        let i = self.table.push(()).unwrap();
-        self.element.insert(i.rep(), IcedColumn::new().into());
-        i
-    }
-
-    fn from_vec(
-        &mut self,
-        children: Vec<wasmtime::component::Resource<core::widget::Element>>,
-    ) -> wasmtime::component::Resource<core::widget::Column> {
-        let capacity = children.capacity();
-        let children =
-            children
-                .into_iter()
-                .fold(Vec::with_capacity(capacity), |mut children, element| {
-                    children.push(self.element.remove(&element.rep()).unwrap());
-                    children
-                });
-
-        let i = self.table.push(()).unwrap();
-        self.element
-            .insert(i.rep(), IcedColumn::from_vec(children).into());
-        i
-    }
-
-    fn spacing(
-        &mut self,
-        column: wasmtime::component::Resource<core::widget::Column>,
-        amount: Pixels,
-    ) -> wasmtime::component::Resource<core::widget::Column> {
-        let mut widget = self
-            .element
-            .remove(&column.rep())
-            .unwrap()
-            .downcast::<IcedColumn>();
-        *widget = widget.spacing(amount);
-        self.element.insert(column.rep(), (*widget).into());
-
-        Resource::new_own(column.rep())
-    }
-
-    fn padding(
-        &mut self,
-        column: wasmtime::component::Resource<core::widget::Column>,
-        padding: Padding,
-    ) -> wasmtime::component::Resource<core::widget::Column> {
-        let mut widget = self
-            .element
-            .remove(&column.rep())
-            .unwrap()
-            .downcast::<IcedColumn>();
-        *widget = widget.padding(padding);
-        self.element.insert(column.rep(), (*widget).into());
-
-        Resource::new_own(column.rep())
-    }
-
-    fn width(
-        &mut self,
-        column: wasmtime::component::Resource<core::widget::Column>,
-        width: Length,
-    ) -> wasmtime::component::Resource<core::widget::Column> {
-        let mut widget = self
-            .element
-            .remove(&column.rep())
-            .unwrap()
-            .downcast::<IcedColumn>();
-        *widget = widget.width(width);
-        self.element.insert(column.rep(), (*widget).into());
-
-        Resource::new_own(column.rep())
-    }
-
-    fn height(
-        &mut self,
-        column: wasmtime::component::Resource<core::widget::Column>,
-        height: Length,
-    ) -> wasmtime::component::Resource<core::widget::Column> {
-        let mut widget = self
-            .element
-            .remove(&column.rep())
-            .unwrap()
-            .downcast::<IcedColumn>();
-        *widget = widget.height(height);
-        self.element.insert(column.rep(), (*widget).into());
-
-        Resource::new_own(column.rep())
-    }
-
-    fn max_width(
-        &mut self,
-        column: wasmtime::component::Resource<core::widget::Column>,
-        width: Pixels,
-    ) -> wasmtime::component::Resource<core::widget::Column> {
-        let mut widget = self
-            .element
-            .remove(&column.rep())
-            .unwrap()
-            .downcast::<IcedColumn>();
-        *widget = widget.max_width(width);
-        self.element.insert(column.rep(), (*widget).into());
-
-        Resource::new_own(column.rep())
-    }
-
-    fn align_x(
-        &mut self,
-        column: wasmtime::component::Resource<core::widget::Column>,
-        align: Horizontal,
-    ) -> wasmtime::component::Resource<core::widget::Column> {
-        let mut widget = self
-            .element
-            .remove(&column.rep())
-            .unwrap()
-            .downcast::<IcedColumn>();
-        *widget = widget.align_x(align);
-        self.element.insert(column.rep(), (*widget).into());
-
-        Resource::new_own(column.rep())
-    }
-
-    fn clip(
-        &mut self,
-        column: wasmtime::component::Resource<core::widget::Column>,
-        clip: bool,
-    ) -> wasmtime::component::Resource<core::widget::Column> {
-        let mut widget = self
-            .element
-            .remove(&column.rep())
-            .unwrap()
-            .downcast::<IcedColumn>();
-        *widget = widget.clip(clip);
-        self.element.insert(column.rep(), (*widget).into());
-
-        Resource::new_own(column.rep())
-    }
-
-    fn push(
-        &mut self,
-        column: Resource<core::widget::Column>,
-        child: Resource<core::widget::Element>,
-    ) -> Resource<core::widget::Column> {
-        let content = self
-            .element
-            .remove(&child.rep())
-            .expect("button content not found");
-        let mut widget = self
-            .element
-            .remove(&column.rep())
-            .unwrap()
-            .downcast::<IcedColumn>();
-        *widget = widget.push(content);
-        self.element.insert(column.rep(), (*widget).into());
-
-        Resource::new_own(column.rep())
-    }
-
-    fn extend(
-        &mut self,
-        column: Resource<core::widget::Column>,
-        children: Vec<Resource<core::widget::Element>>,
-    ) -> Resource<core::widget::Column> {
-        let capacity = children.capacity();
-        let children =
-            children
-                .into_iter()
-                .fold(Vec::with_capacity(capacity), |mut children, element| {
-                    children.push(self.element.remove(&element.rep()).unwrap());
-                    children
-                });
-
-        let mut widget = self
-            .element
-            .remove(&column.rep())
-            .unwrap()
-            .downcast::<IcedColumn>();
-        *widget = widget.extend(children);
-        self.element.insert(column.rep(), (*widget).into());
-
-        Resource::new_own(column.rep())
-    }
-
-    fn into_element(
-        &mut self,
-        column: Resource<core::widget::Column>,
-    ) -> Resource<core::widget::Element> {
-        Resource::new_own(column.rep())
-    }
-
-    fn drop(&mut self, _column: Resource<core::widget::Column>) -> wasmtime::Result<()> {
-        Ok(())
-    }
-}
-
-impl core::widget::HostText for InternalState {
-    fn new(&mut self, fragment: String) -> Resource<core::widget::Text> {
-        let i = self.table.push(()).unwrap();
-        self.element.insert(i.rep(), IcedText::new(fragment).into());
-        i
-    }
-
-    fn size(
-        &mut self,
-        text: Resource<core::widget::Text>,
-        size: Pixels,
-    ) -> Resource<core::widget::Text> {
-        let mut widget = self
-            .element
-            .remove(&text.rep())
-            .unwrap()
-            .downcast::<IcedText>();
-        *widget = widget.size(size);
-        self.element.insert(text.rep(), (*widget).into());
-
-        Resource::new_own(text.rep())
-    }
-
-    fn color(
-        &mut self,
-        text: Resource<core::widget::Text>,
-        color: Color,
-    ) -> Resource<core::widget::Text> {
-        let mut widget = self
-            .element
-            .remove(&text.rep())
-            .unwrap()
-            .downcast::<IcedText>();
-        *widget = widget.color(color);
-        self.element.insert(text.rep(), (*widget).into());
-
-        Resource::new_own(text.rep())
-    }
-
-    fn into_element(
-        &mut self,
-        text: Resource<core::widget::Text>,
-    ) -> Resource<core::widget::Element> {
-        Resource::new_own(text.rep())
-    }
-
-    fn drop(&mut self, _text: Resource<core::widget::Text>) -> wasmtime::Result<()> {
-        Ok(())
-    }
+                                output.send(Message::Thawing(timer.elapsed())).await.expect(
+                                "Couldn't send a WatchedFileChanged Message for some odd reason",
+                            );
+                            }
+                        }
+                    }
+                    Err(_) => {}
+                }
+            }
+        }
+    })
 }
