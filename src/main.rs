@@ -20,17 +20,17 @@ pub enum Message {
     Decrement,
 }
 
-impl From<runtime::host::Message> for Message {
-    fn from(msg: runtime::host::Message) -> Self {
+impl From<runtime::guest::Message> for Message {
+    fn from(msg: runtime::guest::Message) -> Self {
         match msg {
-            runtime::host::Message::Toggled(is_checked) => Message::Toggled(is_checked),
-            runtime::host::Message::Increment => Message::Increment,
-            runtime::host::Message::Decrement => Message::Decrement,
+            runtime::guest::Message::Toggled(is_checked) => Message::Toggled(is_checked),
+            runtime::guest::Message::Increment => Message::Increment,
+            runtime::guest::Message::Decrement => Message::Decrement,
         }
     }
 }
 
-impl From<&Counter> for runtime::host::State {
+impl From<&Counter> for runtime::guest::State {
     fn from(state: &Counter) -> Self {
         Self {
             counter: state.value,
@@ -73,9 +73,6 @@ impl Thawing {
 
     fn update(&mut self, message: runtime::Message) {
         match message {
-            runtime::Message::Direct(message) => {
-                self.state.update(message.into());
-            }
             runtime::Message::Stateless(id) => {
                 let message = self.runtime.call(id);
                 self.state.update(message.into());

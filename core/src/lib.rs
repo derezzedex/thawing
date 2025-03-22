@@ -6,7 +6,6 @@ macro_rules! thaw {
     ($ty: ident) => {
         use $crate::{bindings, runtime};
         use bindings::exports::thawing::core::guest;
-        use bindings::exports::thawing::core::runtime as wasm;
 
         #[doc(hidden)]
         struct _Component;
@@ -14,24 +13,20 @@ macro_rules! thaw {
         #[doc(hidden)]
         struct _Table;
 
-        impl wasm::Guest for _Component {
-            type Table = _Table;
-        }
-
-        impl wasm::GuestTable for _Table {
+        impl guest::GuestTable for _Table {
             fn new() -> Self {
                 runtime::TABLE.lock().unwrap().clear();
 
                 _Table
             }
 
-            fn call(&self, c: wasm::Closure) -> bindings::thawing::core::host::Message {
+            fn call(&self, c: guest::Closure) -> guest::Message {
                 let table = runtime::TABLE.lock().unwrap();
                 let closure = table.get(&c.id()).unwrap();
                 closure.call().downcast()
             }
 
-            fn call_with(&self, c: wasm::Closure, state: wasm::Bytes) -> bindings::thawing::core::host::Message {
+            fn call_with(&self, c: guest::Closure, state: guest::Bytes) -> guest::Message {
                 let table = runtime::TABLE.lock().unwrap();
                 let closure = table.get(&c.id()).unwrap();
                 closure.call_with(runtime::AnyBox::new(state)).downcast()
@@ -40,6 +35,7 @@ macro_rules! thaw {
 
         impl guest::Guest for _Component {
             type App = $ty;
+            type Table = _Table;
         }
 
         bindings::export!(_Component with_types_in bindings);
@@ -58,8 +54,8 @@ pub mod widget {
     }
 }
 
+pub use bindings::exports::thawing::core::guest;
 pub use bindings::thawing::core;
-pub use core::host;
 pub use core::types::{
     Color, Element,
     Horizontal::{self, *},

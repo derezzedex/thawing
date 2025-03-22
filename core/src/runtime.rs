@@ -1,9 +1,7 @@
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
 
-use crate::bindings::exports::thawing::core::guest;
-use crate::bindings::exports::thawing::core::runtime;
-
+use crate::guest;
 pub use guest::GuestApp as Application;
 
 pub static TABLE: LazyLock<Mutex<HashMap<u32, Closure>>> =
@@ -32,7 +30,7 @@ impl Closure {
         T: 'static,
     {
         let wrapper = move |state: AnyBox| -> AnyBox {
-            let bytes = state.downcast::<runtime::Bytes>();
+            let bytes = state.downcast::<guest::Bytes>();
             AnyBox::new(func(bincode::deserialize(&bytes).unwrap()))
         };
 

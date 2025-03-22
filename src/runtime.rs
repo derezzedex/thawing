@@ -13,7 +13,7 @@ use notify_debouncer_mini::notify::RecursiveMode;
 use notify_debouncer_mini::{new_debouncer, DebouncedEventKind};
 use wasmtime::component::{Component, Linker, Resource, ResourceAny, ResourceTable};
 
-pub use core::host;
+pub use exports::thawing::core::guest;
 use thawing::core;
 
 pub type Empty = ();
@@ -37,7 +37,6 @@ pub fn watch(path: impl AsRef<Path>) -> Task<Message> {
 
 #[derive(Debug, Clone)]
 pub enum Message {
-    Direct(host::Message),
     Stateless(u32),
     Stateful(u32, Bytes),
     Thawing(Duration),
@@ -47,7 +46,6 @@ pub(crate) struct State {
     path: PathBuf,
     store: Rc<RefCell<wasmtime::Store<InternalState>>>,
     bindings: Rc<RefCell<Thawing>>,
-    app: Rc<RefCell<ResourceAny>>,
     table: Rc<RefCell<ResourceAny>>,
 
     engine: wasmtime::Engine,
@@ -67,14 +65,8 @@ impl State {
         let bindings = Thawing::instantiate(&mut store, &component, &linker).unwrap();
 
         let table = bindings
-            .thawing_core_runtime()
-            .table()
-            .call_constructor(&mut store)
-            .unwrap();
-
-        let app = bindings
             .thawing_core_guest()
-            .app()
+            .table()
             .call_constructor(&mut store)
             .unwrap();
 
@@ -82,7 +74,6 @@ impl State {
             path,
             store: Rc::new(RefCell::new(store)),
             bindings: Rc::new(RefCell::new(bindings)),
-            app: Rc::new(RefCell::new(app)),
             table: Rc::new(RefCell::new(table)),
             engine,
             linker,
@@ -98,25 +89,18 @@ impl State {
         *bindings = Thawing::instantiate(&mut *store, &component, &self.linker).unwrap();
 
         let mut table = self.table.borrow_mut();
-        let mut app = self.app.borrow_mut();
 
         *table = bindings
-            .thawing_core_runtime()
-            .table()
-            .call_constructor(&mut *store)
-            .unwrap();
-
-        *app = bindings
             .thawing_core_guest()
-            .app()
+            .table()
             .call_constructor(&mut *store)
             .unwrap();
     }
 
-    pub fn call(&mut self, closure: u32) -> host::Message {
+    pub fn call(&mut self, closure: u32) -> guest::Message {
         self.bindings
             .borrow()
-            .thawing_core_runtime()
+            .thawing_core_guest()
             .table()
             .call_call(
                 &mut *self.store.borrow_mut(),
@@ -126,10 +110,10 @@ impl State {
             .unwrap()
     }
 
-    pub fn call_with(&mut self, closure: u32, state: Bytes) -> host::Message {
+    pub fn call_with(&mut self, closure: u32, state: Bytes) -> guest::Message {
         self.bindings
             .borrow_mut()
-            .thawing_core_runtime()
+            .thawing_core_guest()
             .table()
             .call_call_with(
                 &mut *self.store.borrow_mut(),
@@ -140,7 +124,7 @@ impl State {
             .unwrap()
     }
 
-    pub fn view(&self, state: impl Into<host::State>) -> iced::Element<'static, Message> {
+    pub fn view(&self, state: impl Into<guest::State>) -> iced::Element<'static, Message> {
         let mut store = self.store.borrow_mut();
         let mut table = self.table.borrow_mut();
         table.resource_drop(&mut *store).unwrap();
@@ -150,7 +134,7 @@ impl State {
         *table = self
             .bindings
             .borrow()
-            .thawing_core_runtime()
+            .thawing_core_guest()
             .table()
             .call_constructor(&mut *store)
             .unwrap();
@@ -160,7 +144,7 @@ impl State {
             .borrow()
             .thawing_core_guest()
             .app()
-            .call_view(&mut *store, *self.app.borrow(), state.into())
+            .call_view(&mut *store, state.into())
             .unwrap();
 
         store.data_mut().element.remove(&view.rep()).unwrap()
@@ -211,7 +195,6 @@ impl InternalState {
     }
 }
 
-impl core::host::Host for InternalState {}
 impl core::widget::Host for InternalState {}
 impl core::types::Host for InternalState {}
 

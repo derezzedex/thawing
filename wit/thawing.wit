@@ -45,12 +45,10 @@ interface types {
 
 interface widget {
   use types.{element, closure, pixels, padding, length, horizontal, color};
-  use host.{message};
 
   resource button {
     constructor(content: element);
 
-    on-press: func(message: message) -> button;
     on-press-with: func(on-press: closure) -> button;
     into-element: func() -> element;
   }
@@ -89,46 +87,34 @@ interface widget {
   }
 }
 
-interface host {
-  record state {
-    counter: s64,
-    toggled: bool,
-  }
+interface guest {
+  use types.{element, closure, bytes};
 
   variant message {
     toggled(bool),
     increment,
     decrement,
   }
-}
 
-interface runtime {
-  use types.{closure, bytes};
-  use host.{message};
-
+  record state {
+    counter: s64,
+    toggled: bool,
+  }
+  
   resource table {
     constructor();
     call: func(c: closure) -> message;
     call-with: func(c: closure, state: bytes) -> message;
   }
-}
-
-interface guest {
-  use types.{element};
-  use host.{state};
 
   resource app {
-    constructor();
-
-    view: func(state: state) -> element;
+    view: static func(state: state) -> element;
   }
 }
 
 world thawing {
     import types;
     import widget;
-    import host;
 
-    export runtime;
     export guest;
 }

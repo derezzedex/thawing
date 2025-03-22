@@ -1,7 +1,6 @@
-use crate::bindings::exports::thawing::core::runtime;
-use crate::core::host::Message;
 use crate::core::types::{Color, Element, Horizontal, Length, Padding, Pixels};
 use crate::core::widget;
+use crate::guest;
 use crate::runtime::{Closure, TABLE};
 
 pub fn button(content: impl Into<Element>) -> Button {
@@ -19,13 +18,12 @@ impl Button {
         }
     }
 
-    pub fn on_press(mut self, message: Message) -> Self {
-        self.raw = self.raw.on_press(message);
-        self
+    pub fn on_press(self, message: guest::Message) -> Self {
+        self.on_press_with(move || message)
     }
 
-    pub fn on_press_with(mut self, f: impl Fn() -> Message + Send + 'static) -> Self {
-        let closure = runtime::Closure::new();
+    pub fn on_press_with(mut self, f: impl Fn() -> guest::Message + Send + 'static) -> Self {
+        let closure = guest::Closure::new();
         TABLE
             .lock()
             .unwrap()
@@ -50,8 +48,8 @@ impl Checkbox {
         }
     }
 
-    pub fn on_toggle(mut self, f: impl Fn(bool) -> Message + Send + 'static) -> Self {
-        let guest_fn = runtime::Closure::new();
+    pub fn on_toggle(mut self, f: impl Fn(bool) -> guest::Message + Send + 'static) -> Self {
+        let guest_fn = guest::Closure::new();
         TABLE
             .lock()
             .unwrap()

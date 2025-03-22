@@ -1,15 +1,11 @@
-use thawing::host::{Message, State};
+use thawing::guest::{Message, State};
 use thawing::widget::{button, column, text};
 use thawing::{Application, Center, Element};
 
 pub struct MyApp;
 
 impl Application for MyApp {
-    fn new() -> Self {
-        MyApp
-    }
-
-    fn view(&self, state: State) -> Element {
+    fn view(state: State) -> Element {
         column![
             button("Increment").on_press(Message::Increment),
             text(state.counter).size(50),

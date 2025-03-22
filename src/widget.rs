@@ -1,6 +1,6 @@
 use crate::runtime::{self, InternalState, Message};
 use core::types::{Color, Horizontal, Length, Padding, Pixels};
-use runtime::thawing::core::{self, host};
+use runtime::thawing::core;
 
 use wasmtime::component::Resource;
 
@@ -47,17 +47,6 @@ impl core::widget::HostButton for InternalState {
         let button = Button::new(content);
 
         self.push(button)
-    }
-
-    fn on_press(
-        &mut self,
-        button: Resource<core::widget::Button>,
-        message: host::Message,
-    ) -> Resource<core::widget::Button> {
-        let mut widget = self.get_widget::<Button, _>(&button);
-        widget = widget.on_press(Message::Direct(message));
-
-        self.insert(button, widget)
     }
 
     fn on_press_with(
