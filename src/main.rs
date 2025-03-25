@@ -30,16 +30,7 @@ impl From<runtime::guest::Message> for Message {
     }
 }
 
-impl From<&Counter> for runtime::guest::State {
-    fn from(state: &Counter) -> Self {
-        Self {
-            counter: state.value,
-            toggled: state.is_checked,
-        }
-    }
-}
-
-#[derive(Default)]
+#[derive(Default, serde::Serialize)]
 struct Counter {
     value: i64,
     is_checked: bool,
@@ -90,6 +81,6 @@ impl Thawing {
     }
 
     fn view(&self) -> iced::Element<runtime::Message> {
-        self.runtime.view(&self.state)
+        self.runtime.view(bincode::serialize(&self.state).unwrap())
     }
 }

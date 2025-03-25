@@ -124,7 +124,7 @@ impl State {
             .unwrap()
     }
 
-    pub fn view(&self, state: impl Into<guest::State>) -> iced::Element<'static, Message> {
+    pub fn view(&self, state: Vec<u8>) -> iced::Element<'static, Message> {
         let mut store = self.store.borrow_mut();
         let mut table = self.table.borrow_mut();
         table.resource_drop(&mut *store).unwrap();
@@ -139,12 +139,20 @@ impl State {
             .call_constructor(&mut *store)
             .unwrap();
 
+        let app = self
+            .bindings
+            .borrow()
+            .thawing_core_guest()
+            .app()
+            .call_constructor(&mut *store, &state)
+            .unwrap();
+
         let view = self
             .bindings
             .borrow()
             .thawing_core_guest()
             .app()
-            .call_view(&mut *store, state.into())
+            .call_view(&mut *store, app)
             .unwrap();
 
         store.data_mut().element.remove(&view.rep()).unwrap()

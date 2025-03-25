@@ -95,11 +95,6 @@ interface guest {
     increment,
     decrement,
   }
-
-  record state {
-    counter: s64,
-    toggled: bool,
-  }
   
   resource table {
     constructor();
@@ -108,7 +103,8 @@ interface guest {
   }
 
   resource app {
-    view: static func(state: state) -> element;
+    constructor(state: bytes);
+    view: func() -> element;
   }
 }
 

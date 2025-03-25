@@ -33,6 +33,19 @@ macro_rules! thaw {
             }
         }
 
+        impl guest::GuestApp for $ty
+        where
+            Self: Application,
+        {
+            fn new(state: Vec<u8>) -> Self {
+                $crate::bincode::deserialize(&state).unwrap()
+            }
+
+            fn view(&self) -> guest::Element {
+                <Self as $crate::Application>::view(self)
+            }
+        }
+
         impl guest::Guest for _Component {
             type App = $ty;
             type Table = _Table;
@@ -40,6 +53,10 @@ macro_rules! thaw {
 
         bindings::export!(_Component with_types_in bindings);
     }
+}
+
+pub trait Application {
+    fn view(&self) -> Element;
 }
 
 pub mod runtime;
@@ -54,6 +71,7 @@ pub mod widget {
     }
 }
 
+pub use bincode;
 pub use bindings::exports::thawing::core::guest;
 pub use bindings::thawing::core;
 pub use core::types::{
@@ -62,7 +80,6 @@ pub use core::types::{
     Length::{self, *},
     Padding, Pixels,
 };
-pub use runtime::Application;
 
 #[macro_export]
 macro_rules! color {

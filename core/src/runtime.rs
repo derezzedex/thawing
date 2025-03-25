@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
 
 use crate::guest;
-pub use guest::GuestApp as Application;
 
 pub static TABLE: LazyLock<Mutex<HashMap<u32, Closure>>> =
     LazyLock::new(|| Mutex::new(HashMap::default()));

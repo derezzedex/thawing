@@ -1061,23 +1061,6 @@ pub mod exports {
                         }
                     }
                 }
-                #[repr(C)]
-                #[derive(Clone, Copy)]
-                pub struct State {
-                    pub counter: i64,
-                    pub toggled: bool,
-                }
-                impl ::core::fmt::Debug for State {
-                    fn fmt(
-                        &self,
-                        f: &mut ::core::fmt::Formatter<'_>,
-                    ) -> ::core::fmt::Result {
-                        f.debug_struct("State")
-                            .field("counter", &self.counter)
-                            .field("toggled", &self.toggled)
-                            .finish()
-                    }
-                }
                 #[derive(Debug)]
                 #[repr(transparent)]
                 pub struct Table {
@@ -1397,15 +1380,26 @@ pub mod exports {
                 }
                 #[doc(hidden)]
                 #[allow(non_snake_case)]
-                pub unsafe fn _export_static_app_view_cabi<T: GuestApp>(
-                    arg0: i64,
-                    arg1: i32,
+                pub unsafe fn _export_constructor_app_cabi<T: GuestApp>(
+                    arg0: *mut u8,
+                    arg1: usize,
                 ) -> i32 {
                     #[cfg(target_arch = "wasm32")] _rt::run_ctors_once();
-                    let result0 = T::view(State {
-                        counter: arg0,
-                        toggled: _rt::bool_lift(arg1 as u8),
-                    });
+                    let len0 = arg1;
+                    let result1 = App::new(
+                        T::new(_rt::Vec::from_raw_parts(arg0.cast(), len0, len0)),
+                    );
+                    (result1).take_handle() as i32
+                }
+                #[doc(hidden)]
+                #[allow(non_snake_case)]
+                pub unsafe fn _export_method_app_view_cabi<T: GuestApp>(
+                    arg0: *mut u8,
+                ) -> i32 {
+                    #[cfg(target_arch = "wasm32")] _rt::run_ctors_once();
+                    let result0 = T::view(
+                        unsafe { AppBorrow::lift(arg0 as u32 as usize) }.get(),
+                    );
                     (result0).take_handle() as i32
                 }
                 pub trait Guest {
@@ -1498,7 +1492,8 @@ pub mod exports {
                             unsafe { rep(handle) }
                         }
                     }
-                    fn view(state: State) -> Element;
+                    fn new(state: Bytes) -> Self;
+                    fn view(&self) -> Element;
                 }
                 #[doc(hidden)]
                 #[macro_export]
@@ -1520,11 +1515,15 @@ pub mod exports {
                         $($path_to_types)*:: _export_method_table_call_with_cabi::<<$ty
                         as $($path_to_types)*:: Guest >::Table > (arg0, arg1, arg2, arg3)
                         } } #[unsafe (export_name =
-                        "thawing:core/guest#[static]app.view")] unsafe extern "C" fn
-                        export_static_app_view(arg0 : i64, arg1 : i32,) -> i32 { unsafe {
-                        $($path_to_types)*:: _export_static_app_view_cabi::<<$ty as
-                        $($path_to_types)*:: Guest >::App > (arg0, arg1) } } const _ : ()
-                        = { #[doc(hidden)] #[unsafe (export_name =
+                        "thawing:core/guest#[constructor]app")] unsafe extern "C" fn
+                        export_constructor_app(arg0 : * mut u8, arg1 : usize,) -> i32 {
+                        unsafe { $($path_to_types)*:: _export_constructor_app_cabi::<<$ty
+                        as $($path_to_types)*:: Guest >::App > (arg0, arg1) } } #[unsafe
+                        (export_name = "thawing:core/guest#[method]app.view")] unsafe
+                        extern "C" fn export_method_app_view(arg0 : * mut u8,) -> i32 {
+                        unsafe { $($path_to_types)*:: _export_method_app_view_cabi::<<$ty
+                        as $($path_to_types)*:: Guest >::App > (arg0) } } const _ : () =
+                        { #[doc(hidden)] #[unsafe (export_name =
                         "thawing:core/guest#[dtor]table")] #[allow(non_snake_case)]
                         unsafe extern "C" fn dtor(rep : * mut u8) { unsafe {
                         $($path_to_types)*:: Table::dtor::< <$ty as $($path_to_types)*::
@@ -1706,17 +1705,6 @@ mod _rt {
     pub fn run_ctors_once() {
         wit_bindgen_rt::run_ctors_once();
     }
-    pub unsafe fn bool_lift(val: u8) -> bool {
-        if cfg!(debug_assertions) {
-            match val {
-                0 => false,
-                1 => true,
-                _ => panic!("invalid bool discriminant"),
-            }
-        } else {
-            val != 0
-        }
-    }
     extern crate alloc as alloc_crate;
 }
 /// Generates `#[unsafe(no_mangle)]` functions to export the specified type as
@@ -1749,9 +1737,9 @@ macro_rules! __export_thawing_impl {
         () = { #[cfg(target_arch = "wasm32")] #[unsafe (link_section =
         "component-type:wit-bindgen:0.41.0:thawing:core:thawing:imports and exports")]
         #[doc(hidden)] #[allow(clippy::octal_escapes)] pub static
-        __WIT_BINDGEN_COMPONENT_TYPE : [u8; 2094] = *
+        __WIT_BINDGEN_COMPONENT_TYPE : [u8; 2100] = *
         b"\
-\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xb0\x0f\x01A\x02\x01\
+\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xb6\x0f\x01A\x02\x01\
 A\x0e\x01B\x14\x04\0\x07closure\x03\x01\x04\0\x07element\x03\x01\x01p}\x04\0\x05\
 bytes\x03\0\x02\x01r\x01\x06amountv\x04\0\x06pixels\x03\0\x04\x01r\x04\x01rv\x01\
 gv\x01bv\x01av\x04\0\x05color\x03\0\x06\x01r\x04\x03topv\x05rightv\x06bottomv\x04\
@@ -1788,17 +1776,17 @@ align\x0b\0\x1e\x04\0\x16[method]column.align-x\x01(\x01@\x02\x04self\"\x04clip\
 h\x11\x01@\x02\x04self/\x04size\x05\0-\x04\0\x11[method]text.size\x010\x01@\x02\x04\
 self/\x05color\x0d\0-\x04\0\x12[method]text.color\x011\x01@\x01\x04self/\0\x12\x04\
 \0\x19[method]text.into-element\x012\x03\0\x13thawing:core/widget\x05\x08\x02\x03\
-\0\0\x05bytes\x01B\x18\x02\x03\x02\x01\x01\x04\0\x07element\x03\0\0\x02\x03\x02\x01\
+\0\0\x05bytes\x01B\x1a\x02\x03\x02\x01\x01\x04\0\x07element\x03\0\0\x02\x03\x02\x01\
 \x02\x04\0\x07closure\x03\0\x02\x02\x03\x02\x01\x09\x04\0\x05bytes\x03\0\x04\x01\
 q\x03\x07toggled\x01\x7f\0\x09increment\0\0\x09decrement\0\0\x04\0\x07message\x03\
-\0\x06\x01r\x02\x07counterx\x07toggled\x7f\x04\0\x05state\x03\0\x08\x04\0\x05tab\
-le\x03\x01\x04\0\x03app\x03\x01\x01i\x0a\x01@\0\0\x0c\x04\0\x12[constructor]tabl\
-e\x01\x0d\x01h\x0a\x01i\x03\x01@\x02\x04self\x0e\x01c\x0f\0\x07\x04\0\x12[method\
-]table.call\x01\x10\x01@\x03\x04self\x0e\x01c\x0f\x05state\x05\0\x07\x04\0\x17[m\
-ethod]table.call-with\x01\x11\x01i\x01\x01@\x01\x05state\x09\0\x12\x04\0\x10[sta\
-tic]app.view\x01\x13\x04\0\x12thawing:core/guest\x05\x0a\x04\0\x14thawing:core/t\
-hawing\x04\0\x0b\x0d\x01\0\x07thawing\x03\0\0\0G\x09producers\x01\x0cprocessed-b\
-y\x02\x0dwit-component\x070.227.1\x10wit-bindgen-rust\x060.41.0";
+\0\x06\x04\0\x05table\x03\x01\x04\0\x03app\x03\x01\x01i\x08\x01@\0\0\x0a\x04\0\x12\
+[constructor]table\x01\x0b\x01h\x08\x01i\x03\x01@\x02\x04self\x0c\x01c\x0d\0\x07\
+\x04\0\x12[method]table.call\x01\x0e\x01@\x03\x04self\x0c\x01c\x0d\x05state\x05\0\
+\x07\x04\0\x17[method]table.call-with\x01\x0f\x01i\x09\x01@\x01\x05state\x05\0\x10\
+\x04\0\x10[constructor]app\x01\x11\x01h\x09\x01i\x01\x01@\x01\x04self\x12\0\x13\x04\
+\0\x10[method]app.view\x01\x14\x04\0\x12thawing:core/guest\x05\x0a\x04\0\x14thaw\
+ing:core/thawing\x04\0\x0b\x0d\x01\0\x07thawing\x03\0\0\0G\x09producers\x01\x0cp\
+rocessed-by\x02\x0dwit-component\x070.227.1\x10wit-bindgen-rust\x060.41.0";
         };
     };
 }
