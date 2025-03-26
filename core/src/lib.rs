@@ -3,7 +3,7 @@ pub mod bindings;
 
 #[macro_export]
 macro_rules! thaw {
-    ($ty: ident) => {
+    ($app: ident) => {
         use $crate::{bindings, runtime};
         use bindings::exports::thawing::core::guest;
 
@@ -20,20 +20,20 @@ macro_rules! thaw {
                 _Table
             }
 
-            fn call(&self, c: guest::Closure) -> guest::Message {
+            fn call(&self, c: guest::Closure) -> guest::Bytes {
                 let table = runtime::TABLE.lock().unwrap();
                 let closure = table.get(&c.id()).unwrap();
                 closure.call().downcast()
             }
 
-            fn call_with(&self, c: guest::Closure, state: guest::Bytes) -> guest::Message {
+            fn call_with(&self, c: guest::Closure, state: guest::Bytes) -> guest::Bytes {
                 let table = runtime::TABLE.lock().unwrap();
                 let closure = table.get(&c.id()).unwrap();
                 closure.call_with(runtime::AnyBox::new(state)).downcast()
             }
         }
 
-        impl guest::GuestApp for $ty
+        impl guest::GuestApp for $app
         where
             Self: Application,
         {
@@ -47,7 +47,7 @@ macro_rules! thaw {
         }
 
         impl guest::Guest for _Component {
-            type App = $ty;
+            type App = $app;
             type Table = _Table;
         }
 

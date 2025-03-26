@@ -26,11 +26,12 @@ impl Closure {
     pub fn stateful<S, T>(func: impl Fn(S) -> T + Send + 'static) -> Self
     where
         S: serde::de::DeserializeOwned + 'static,
-        T: 'static,
+        T: serde::Serialize + 'static,
     {
         let wrapper = move |state: AnyBox| -> AnyBox {
             let bytes = state.downcast::<guest::Bytes>();
-            AnyBox::new(func(bincode::deserialize(&bytes).unwrap()))
+            let msg = func(bincode::deserialize(&bytes).unwrap());
+            AnyBox::new(bincode::serialize(&msg).unwrap())
         };
 
         Self {
@@ -40,9 +41,10 @@ impl Closure {
 
     pub fn stateless<T>(func: impl Fn() -> T + Send + 'static) -> Self
     where
-        T: 'static,
+        T: serde::Serialize + 'static,
     {
-        let wrapper = move |_state: AnyBox| -> AnyBox { AnyBox::new(func()) };
+        let wrapper =
+            move |_state: AnyBox| -> AnyBox { AnyBox::new(bincode::serialize(&func()).unwrap()) };
 
         Self {
             func: Box::new(wrapper),

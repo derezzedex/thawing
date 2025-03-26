@@ -13,7 +13,6 @@ use notify_debouncer_mini::notify::RecursiveMode;
 use notify_debouncer_mini::{new_debouncer, DebouncedEventKind};
 use wasmtime::component::{Component, Linker, Resource, ResourceAny, ResourceTable};
 
-pub use exports::thawing::core::guest;
 use thawing::core;
 
 pub type Empty = ();
@@ -97,7 +96,7 @@ impl State {
             .unwrap();
     }
 
-    pub fn call(&mut self, closure: u32) -> guest::Message {
+    pub fn call(&mut self, closure: u32) -> Vec<u8> {
         self.bindings
             .borrow()
             .thawing_core_guest()
@@ -110,7 +109,7 @@ impl State {
             .unwrap()
     }
 
-    pub fn call_with(&mut self, closure: u32, state: Bytes) -> guest::Message {
+    pub fn call_with(&mut self, closure: u32, state: Bytes) -> Vec<u8> {
         self.bindings
             .borrow_mut()
             .thawing_core_guest()

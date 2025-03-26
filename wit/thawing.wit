@@ -89,17 +89,11 @@ interface widget {
 
 interface guest {
   use types.{element, closure, bytes};
-
-  variant message {
-    toggled(bool),
-    increment,
-    decrement,
-  }
   
   resource table {
     constructor();
-    call: func(c: closure) -> message;
-    call-with: func(c: closure, state: bytes) -> message;
+    call: func(c: closure) -> bytes;
+    call-with: func(c: closure, state: bytes) -> bytes;
   }
 
   resource app {

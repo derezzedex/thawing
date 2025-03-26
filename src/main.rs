@@ -13,21 +13,11 @@ pub const SRC_PATH: &'static str = "./example/src/lib.rs";
 pub const WASM_PATH: &'static str =
     "./example/target/wasm32-unknown-unknown/debug/thawing_example.wasm";
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Deserialize)]
 pub enum Message {
     Toggled(bool),
     Increment,
     Decrement,
-}
-
-impl From<runtime::guest::Message> for Message {
-    fn from(msg: runtime::guest::Message) -> Self {
-        match msg {
-            runtime::guest::Message::Toggled(is_checked) => Message::Toggled(is_checked),
-            runtime::guest::Message::Increment => Message::Increment,
-            runtime::guest::Message::Decrement => Message::Decrement,
-        }
-    }
 }
 
 #[derive(Default, serde::Serialize)]
@@ -65,12 +55,14 @@ impl Thawing {
     fn update(&mut self, message: runtime::Message) {
         match message {
             runtime::Message::Stateless(id) => {
-                let message = self.runtime.call(id);
-                self.state.update(message.into());
+                let bytes = self.runtime.call(id);
+                let message = bincode::deserialize(&bytes).unwrap();
+                self.state.update(message);
             }
             runtime::Message::Stateful(id, state) => {
-                let message = self.runtime.call_with(id, state);
-                self.state.update(message.into());
+                let bytes = self.runtime.call_with(id, state);
+                let message = bincode::deserialize(&bytes).unwrap();
+                self.state.update(message);
             }
             runtime::Message::Thawing(elapsed) => {
                 let timer = std::time::Instant::now();

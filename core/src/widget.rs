@@ -3,26 +3,32 @@ use crate::core::widget;
 use crate::guest;
 use crate::runtime::{Closure, TABLE};
 
-pub fn button(content: impl Into<Element>) -> Button {
+use std::marker::PhantomData;
+
+pub fn button<Message: serde::Serialize + Clone + Send + 'static>(
+    content: impl Into<Element>,
+) -> Button<Message> {
     Button::new(content)
 }
 
-pub struct Button {
+pub struct Button<Message> {
     raw: widget::Button,
+    message: PhantomData<Message>,
 }
 
-impl Button {
+impl<Message: serde::Serialize + Clone + Send + 'static> Button<Message> {
     pub fn new(content: impl Into<Element>) -> Self {
         Self {
             raw: widget::Button::new(content.into()),
+            message: PhantomData,
         }
     }
 
-    pub fn on_press(self, message: guest::Message) -> Self {
-        self.on_press_with(move || message)
+    pub fn on_press(self, message: Message) -> Self {
+        self.on_press_with(move || message.clone())
     }
 
-    pub fn on_press_with(mut self, f: impl Fn() -> guest::Message + Send + 'static) -> Self {
+    pub fn on_press_with(mut self, f: impl Fn() -> Message + Send + 'static) -> Self {
         let closure = guest::Closure::new();
         TABLE
             .lock()
@@ -33,22 +39,27 @@ impl Button {
     }
 }
 
-pub fn checkbox(label: impl Into<String>, is_checked: bool) -> Checkbox {
+pub fn checkbox<Message: serde::Serialize + 'static>(
+    label: impl Into<String>,
+    is_checked: bool,
+) -> Checkbox<Message> {
     Checkbox::new(label, is_checked)
 }
 
-pub struct Checkbox {
+pub struct Checkbox<Message> {
     raw: widget::Checkbox,
+    message: PhantomData<Message>,
 }
 
-impl Checkbox {
+impl<Message: serde::Serialize + 'static> Checkbox<Message> {
     pub fn new(label: impl Into<String>, is_checked: bool) -> Self {
         Self {
             raw: widget::Checkbox::new(&label.into(), is_checked),
+            message: PhantomData,
         }
     }
 
-    pub fn on_toggle(mut self, f: impl Fn(bool) -> guest::Message + Send + 'static) -> Self {
+    pub fn on_toggle(mut self, f: impl Fn(bool) -> Message + Send + 'static) -> Self {
         let guest_fn = guest::Closure::new();
         TABLE
             .lock()
@@ -192,14 +203,14 @@ impl From<Text> for Element {
     }
 }
 
-impl From<Button> for Element {
-    fn from(button: Button) -> Self {
+impl<Message> From<Button<Message>> for Element {
+    fn from(button: Button<Message>) -> Self {
         button.raw.into_element()
     }
 }
 
-impl From<Checkbox> for Element {
-    fn from(checkbox: Checkbox) -> Self {
+impl<Message> From<Checkbox<Message>> for Element {
+    fn from(checkbox: Checkbox<Message>) -> Self {
         checkbox.raw.into_element()
     }
 }

@@ -1037,30 +1037,6 @@ pub mod exports {
                 pub type Element = super::super::super::super::thawing::core::types::Element;
                 pub type Closure = super::super::super::super::thawing::core::types::Closure;
                 pub type Bytes = super::super::super::super::thawing::core::types::Bytes;
-                #[derive(Clone, Copy)]
-                pub enum Message {
-                    Toggled(bool),
-                    Increment,
-                    Decrement,
-                }
-                impl ::core::fmt::Debug for Message {
-                    fn fmt(
-                        &self,
-                        f: &mut ::core::fmt::Formatter<'_>,
-                    ) -> ::core::fmt::Result {
-                        match self {
-                            Message::Toggled(e) => {
-                                f.debug_tuple("Message::Toggled").field(e).finish()
-                            }
-                            Message::Increment => {
-                                f.debug_tuple("Message::Increment").finish()
-                            }
-                            Message::Decrement => {
-                                f.debug_tuple("Message::Decrement").finish()
-                            }
-                        }
-                    }
-                }
                 #[derive(Debug)]
                 #[repr(transparent)]
                 pub struct Table {
@@ -1324,22 +1300,26 @@ pub mod exports {
                         },
                     );
                     let ptr1 = (&raw mut _RET_AREA.0).cast::<u8>();
-                    match result0 {
-                        Message::Toggled(e) => {
-                            *ptr1.add(0).cast::<u8>() = (0i32) as u8;
-                            *ptr1.add(1).cast::<u8>() = (match e {
-                                true => 1,
-                                false => 0,
-                            }) as u8;
-                        }
-                        Message::Increment => {
-                            *ptr1.add(0).cast::<u8>() = (1i32) as u8;
-                        }
-                        Message::Decrement => {
-                            *ptr1.add(0).cast::<u8>() = (2i32) as u8;
-                        }
-                    }
+                    let vec2 = (result0).into_boxed_slice();
+                    let ptr2 = vec2.as_ptr().cast::<u8>();
+                    let len2 = vec2.len();
+                    ::core::mem::forget(vec2);
+                    *ptr1.add(::core::mem::size_of::<*const u8>()).cast::<usize>() = len2;
+                    *ptr1.add(0).cast::<*mut u8>() = ptr2.cast_mut();
                     ptr1
+                }
+                #[doc(hidden)]
+                #[allow(non_snake_case)]
+                pub unsafe fn __post_return_method_table_call<T: GuestTable>(
+                    arg0: *mut u8,
+                ) {
+                    let l0 = *arg0.add(0).cast::<*mut u8>();
+                    let l1 = *arg0
+                        .add(::core::mem::size_of::<*const u8>())
+                        .cast::<usize>();
+                    let base2 = l0;
+                    let len2 = l1;
+                    _rt::cabi_dealloc(base2, len2 * 1, 1);
                 }
                 #[doc(hidden)]
                 #[allow(non_snake_case)]
@@ -1361,22 +1341,26 @@ pub mod exports {
                         _rt::Vec::from_raw_parts(arg2.cast(), len0, len0),
                     );
                     let ptr2 = (&raw mut _RET_AREA.0).cast::<u8>();
-                    match result1 {
-                        Message::Toggled(e) => {
-                            *ptr2.add(0).cast::<u8>() = (0i32) as u8;
-                            *ptr2.add(1).cast::<u8>() = (match e {
-                                true => 1,
-                                false => 0,
-                            }) as u8;
-                        }
-                        Message::Increment => {
-                            *ptr2.add(0).cast::<u8>() = (1i32) as u8;
-                        }
-                        Message::Decrement => {
-                            *ptr2.add(0).cast::<u8>() = (2i32) as u8;
-                        }
-                    }
+                    let vec3 = (result1).into_boxed_slice();
+                    let ptr3 = vec3.as_ptr().cast::<u8>();
+                    let len3 = vec3.len();
+                    ::core::mem::forget(vec3);
+                    *ptr2.add(::core::mem::size_of::<*const u8>()).cast::<usize>() = len3;
+                    *ptr2.add(0).cast::<*mut u8>() = ptr3.cast_mut();
                     ptr2
+                }
+                #[doc(hidden)]
+                #[allow(non_snake_case)]
+                pub unsafe fn __post_return_method_table_call_with<T: GuestTable>(
+                    arg0: *mut u8,
+                ) {
+                    let l0 = *arg0.add(0).cast::<*mut u8>();
+                    let l1 = *arg0
+                        .add(::core::mem::size_of::<*const u8>())
+                        .cast::<usize>();
+                    let base2 = l0;
+                    let len2 = l1;
+                    _rt::cabi_dealloc(base2, len2 * 1, 1);
                 }
                 #[doc(hidden)]
                 #[allow(non_snake_case)]
@@ -1448,8 +1432,8 @@ pub mod exports {
                         }
                     }
                     fn new() -> Self;
-                    fn call(&self, c: Closure) -> Message;
-                    fn call_with(&self, c: Closure, state: Bytes) -> Message;
+                    fn call(&self, c: Closure) -> Bytes;
+                    fn call_with(&self, c: Closure, state: Bytes) -> Bytes;
                 }
                 pub trait GuestApp: 'static {
                     #[doc(hidden)]
@@ -1509,21 +1493,32 @@ pub mod exports {
                         u8 { unsafe { $($path_to_types)*::
                         _export_method_table_call_cabi::<<$ty as $($path_to_types)*::
                         Guest >::Table > (arg0, arg1) } } #[unsafe (export_name =
-                        "thawing:core/guest#[method]table.call-with")] unsafe extern "C"
-                        fn export_method_table_call_with(arg0 : * mut u8, arg1 : i32,
-                        arg2 : * mut u8, arg3 : usize,) -> * mut u8 { unsafe {
-                        $($path_to_types)*:: _export_method_table_call_with_cabi::<<$ty
-                        as $($path_to_types)*:: Guest >::Table > (arg0, arg1, arg2, arg3)
-                        } } #[unsafe (export_name =
-                        "thawing:core/guest#[constructor]app")] unsafe extern "C" fn
-                        export_constructor_app(arg0 : * mut u8, arg1 : usize,) -> i32 {
-                        unsafe { $($path_to_types)*:: _export_constructor_app_cabi::<<$ty
-                        as $($path_to_types)*:: Guest >::App > (arg0, arg1) } } #[unsafe
-                        (export_name = "thawing:core/guest#[method]app.view")] unsafe
-                        extern "C" fn export_method_app_view(arg0 : * mut u8,) -> i32 {
-                        unsafe { $($path_to_types)*:: _export_method_app_view_cabi::<<$ty
-                        as $($path_to_types)*:: Guest >::App > (arg0) } } const _ : () =
-                        { #[doc(hidden)] #[unsafe (export_name =
+                        "cabi_post_thawing:core/guest#[method]table.call")] unsafe extern
+                        "C" fn _post_return_method_table_call(arg0 : * mut u8,) { unsafe
+                        { $($path_to_types)*:: __post_return_method_table_call::<<$ty as
+                        $($path_to_types)*:: Guest >::Table > (arg0) } } #[unsafe
+                        (export_name = "thawing:core/guest#[method]table.call-with")]
+                        unsafe extern "C" fn export_method_table_call_with(arg0 : * mut
+                        u8, arg1 : i32, arg2 : * mut u8, arg3 : usize,) -> * mut u8 {
+                        unsafe { $($path_to_types)*::
+                        _export_method_table_call_with_cabi::<<$ty as
+                        $($path_to_types)*:: Guest >::Table > (arg0, arg1, arg2, arg3) }
+                        } #[unsafe (export_name =
+                        "cabi_post_thawing:core/guest#[method]table.call-with")] unsafe
+                        extern "C" fn _post_return_method_table_call_with(arg0 : * mut
+                        u8,) { unsafe { $($path_to_types)*::
+                        __post_return_method_table_call_with::<<$ty as
+                        $($path_to_types)*:: Guest >::Table > (arg0) } } #[unsafe
+                        (export_name = "thawing:core/guest#[constructor]app")] unsafe
+                        extern "C" fn export_constructor_app(arg0 : * mut u8, arg1 :
+                        usize,) -> i32 { unsafe { $($path_to_types)*::
+                        _export_constructor_app_cabi::<<$ty as $($path_to_types)*:: Guest
+                        >::App > (arg0, arg1) } } #[unsafe (export_name =
+                        "thawing:core/guest#[method]app.view")] unsafe extern "C" fn
+                        export_method_app_view(arg0 : * mut u8,) -> i32 { unsafe {
+                        $($path_to_types)*:: _export_method_app_view_cabi::<<$ty as
+                        $($path_to_types)*:: Guest >::App > (arg0) } } const _ : () = {
+                        #[doc(hidden)] #[unsafe (export_name =
                         "thawing:core/guest#[dtor]table")] #[allow(non_snake_case)]
                         unsafe extern "C" fn dtor(rep : * mut u8) { unsafe {
                         $($path_to_types)*:: Table::dtor::< <$ty as $($path_to_types)*::
@@ -1536,10 +1531,16 @@ pub mod exports {
                 }
                 #[doc(hidden)]
                 pub use __export_thawing_core_guest_cabi;
-                #[repr(align(1))]
-                struct _RetArea([::core::mem::MaybeUninit<u8>; 2]);
+                #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                struct _RetArea(
+                    [::core::mem::MaybeUninit<
+                        u8,
+                    >; 2 * ::core::mem::size_of::<*const u8>()],
+                );
                 static mut _RET_AREA: _RetArea = _RetArea(
-                    [::core::mem::MaybeUninit::uninit(); 2],
+                    [::core::mem::MaybeUninit::uninit(); 2
+                        * ::core::mem::size_of::<*const u8>()],
                 );
             }
         }
@@ -1705,6 +1706,13 @@ mod _rt {
     pub fn run_ctors_once() {
         wit_bindgen_rt::run_ctors_once();
     }
+    pub unsafe fn cabi_dealloc(ptr: *mut u8, size: usize, align: usize) {
+        if size == 0 {
+            return;
+        }
+        let layout = alloc::Layout::from_size_align_unchecked(size, align);
+        alloc::dealloc(ptr, layout);
+    }
     extern crate alloc as alloc_crate;
 }
 /// Generates `#[unsafe(no_mangle)]` functions to export the specified type as
@@ -1737,9 +1745,9 @@ macro_rules! __export_thawing_impl {
         () = { #[cfg(target_arch = "wasm32")] #[unsafe (link_section =
         "component-type:wit-bindgen:0.41.0:thawing:core:thawing:imports and exports")]
         #[doc(hidden)] #[allow(clippy::octal_escapes)] pub static
-        __WIT_BINDGEN_COMPONENT_TYPE : [u8; 2100] = *
+        __WIT_BINDGEN_COMPONENT_TYPE : [u8; 2049] = *
         b"\
-\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xb6\x0f\x01A\x02\x01\
+\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\x83\x0f\x01A\x02\x01\
 A\x0e\x01B\x14\x04\0\x07closure\x03\x01\x04\0\x07element\x03\x01\x01p}\x04\0\x05\
 bytes\x03\0\x02\x01r\x01\x06amountv\x04\0\x06pixels\x03\0\x04\x01r\x04\x01rv\x01\
 gv\x01bv\x01av\x04\0\x05color\x03\0\x06\x01r\x04\x03topv\x05rightv\x06bottomv\x04\
@@ -1776,17 +1784,16 @@ align\x0b\0\x1e\x04\0\x16[method]column.align-x\x01(\x01@\x02\x04self\"\x04clip\
 h\x11\x01@\x02\x04self/\x04size\x05\0-\x04\0\x11[method]text.size\x010\x01@\x02\x04\
 self/\x05color\x0d\0-\x04\0\x12[method]text.color\x011\x01@\x01\x04self/\0\x12\x04\
 \0\x19[method]text.into-element\x012\x03\0\x13thawing:core/widget\x05\x08\x02\x03\
-\0\0\x05bytes\x01B\x1a\x02\x03\x02\x01\x01\x04\0\x07element\x03\0\0\x02\x03\x02\x01\
-\x02\x04\0\x07closure\x03\0\x02\x02\x03\x02\x01\x09\x04\0\x05bytes\x03\0\x04\x01\
-q\x03\x07toggled\x01\x7f\0\x09increment\0\0\x09decrement\0\0\x04\0\x07message\x03\
-\0\x06\x04\0\x05table\x03\x01\x04\0\x03app\x03\x01\x01i\x08\x01@\0\0\x0a\x04\0\x12\
-[constructor]table\x01\x0b\x01h\x08\x01i\x03\x01@\x02\x04self\x0c\x01c\x0d\0\x07\
-\x04\0\x12[method]table.call\x01\x0e\x01@\x03\x04self\x0c\x01c\x0d\x05state\x05\0\
-\x07\x04\0\x17[method]table.call-with\x01\x0f\x01i\x09\x01@\x01\x05state\x05\0\x10\
-\x04\0\x10[constructor]app\x01\x11\x01h\x09\x01i\x01\x01@\x01\x04self\x12\0\x13\x04\
-\0\x10[method]app.view\x01\x14\x04\0\x12thawing:core/guest\x05\x0a\x04\0\x14thaw\
-ing:core/thawing\x04\0\x0b\x0d\x01\0\x07thawing\x03\0\0\0G\x09producers\x01\x0cp\
-rocessed-by\x02\x0dwit-component\x070.227.1\x10wit-bindgen-rust\x060.41.0";
+\0\0\x05bytes\x01B\x18\x02\x03\x02\x01\x01\x04\0\x07element\x03\0\0\x02\x03\x02\x01\
+\x02\x04\0\x07closure\x03\0\x02\x02\x03\x02\x01\x09\x04\0\x05bytes\x03\0\x04\x04\
+\0\x05table\x03\x01\x04\0\x03app\x03\x01\x01i\x06\x01@\0\0\x08\x04\0\x12[constru\
+ctor]table\x01\x09\x01h\x06\x01i\x03\x01@\x02\x04self\x0a\x01c\x0b\0\x05\x04\0\x12\
+[method]table.call\x01\x0c\x01@\x03\x04self\x0a\x01c\x0b\x05state\x05\0\x05\x04\0\
+\x17[method]table.call-with\x01\x0d\x01i\x07\x01@\x01\x05state\x05\0\x0e\x04\0\x10\
+[constructor]app\x01\x0f\x01h\x07\x01i\x01\x01@\x01\x04self\x10\0\x11\x04\0\x10[\
+method]app.view\x01\x12\x04\0\x12thawing:core/guest\x05\x0a\x04\0\x14thawing:cor\
+e/thawing\x04\0\x0b\x0d\x01\0\x07thawing\x03\0\0\0G\x09producers\x01\x0cprocesse\
+d-by\x02\x0dwit-component\x070.227.1\x10wit-bindgen-rust\x060.41.0";
         };
     };
 }

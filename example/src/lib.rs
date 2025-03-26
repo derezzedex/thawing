@@ -1,6 +1,12 @@
-use thawing::guest::Message;
 use thawing::widget::{button, checkbox, column, text};
 use thawing::{Application, Center, Element};
+
+#[derive(Debug, Clone, serde::Serialize)]
+enum Message {
+    Increment,
+    Decrement,
+    Toggled(bool),
+}
 
 #[derive(serde::Deserialize)]
 pub struct MyApp {
