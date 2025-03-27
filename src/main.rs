@@ -54,19 +54,18 @@ impl Thawing {
 
     fn update(&mut self, message: runtime::Message) {
         match message {
-            runtime::Message::Stateless(id) => {
-                let bytes = self.runtime.call(id);
-                let message = bincode::deserialize(&bytes).unwrap();
-                self.state.update(message);
-            }
-            runtime::Message::Stateful(id, state) => {
-                let bytes = self.runtime.call_with(id, state);
+            runtime::Message::Guest(id, data) => {
+                let bytes = match data {
+                    Some(bytes) => self.runtime.call_with(id, bytes),
+                    None => self.runtime.call(id),
+                };
+
                 let message = bincode::deserialize(&bytes).unwrap();
                 self.state.update(message);
             }
             runtime::Message::Thawing(elapsed) => {
                 let timer = std::time::Instant::now();
-                self.runtime.thaw();
+                self.runtime.reload();
                 tracing::info!("Application thawed in {:?}", timer.elapsed() + elapsed);
             }
         }

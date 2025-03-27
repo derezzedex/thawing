@@ -12,6 +12,7 @@ use iced::Task;
 use notify_debouncer_mini::notify::RecursiveMode;
 use notify_debouncer_mini::{new_debouncer, DebouncedEventKind};
 use wasmtime::component::{Component, Linker, Resource, ResourceAny, ResourceTable};
+use wasmtime::{Engine, Store};
 
 use thawing::core;
 
@@ -36,31 +37,41 @@ pub fn watch(path: impl AsRef<Path>) -> Task<Message> {
 
 #[derive(Debug, Clone)]
 pub enum Message {
-    Stateless(u32),
-    Stateful(u32, Bytes),
+    Guest(u32, Option<Bytes>),
     Thawing(Duration),
+}
+
+impl Message {
+    pub fn stateless<U: 'static>(resource: &Resource<U>) -> Self {
+        Self::Guest(resource.rep(), None)
+    }
+
+    pub fn stateful<T: serde::Serialize, U: 'static>(resource: &Resource<U>, value: T) -> Self {
+        let bytes = bincode::serialize(&value).unwrap();
+        Self::Guest(resource.rep(), Some(bytes))
+    }
 }
 
 pub(crate) struct State {
     path: PathBuf,
-    store: Rc<RefCell<wasmtime::Store<InternalState>>>,
+    store: Rc<RefCell<Store<InternalState>>>,
     bindings: Rc<RefCell<Thawing>>,
     table: Rc<RefCell<ResourceAny>>,
 
-    engine: wasmtime::Engine,
+    engine: Engine,
     linker: Linker<InternalState>,
 }
 
 impl State {
     pub fn new(path: impl AsRef<Path>) -> Self {
         let path = path.as_ref().to_path_buf();
-        let engine = wasmtime::Engine::default();
+        let engine = Engine::default();
         let component = Component::from_file(&engine, &path).unwrap();
 
         let mut linker = Linker::new(&engine);
         Thawing::add_to_linker(&mut linker, |state| state).unwrap();
 
-        let mut store = wasmtime::Store::new(&engine, InternalState::default());
+        let mut store = Store::new(&engine, InternalState::default());
         let bindings = Thawing::instantiate(&mut store, &component, &linker).unwrap();
 
         let table = bindings
@@ -79,12 +90,12 @@ impl State {
         }
     }
 
-    pub fn thaw(&mut self) {
+    pub fn reload(&mut self) {
         let component = Component::from_file(&self.engine, &self.path).unwrap();
 
         let mut store = self.store.borrow_mut();
         let mut bindings = self.bindings.borrow_mut();
-        *store = wasmtime::Store::new(&self.engine, InternalState::default());
+        *store = Store::new(&self.engine, InternalState::default());
         *bindings = Thawing::instantiate(&mut *store, &component, &self.linker).unwrap();
 
         let mut table = self.table.borrow_mut();
@@ -213,7 +224,7 @@ impl core::types::HostElement for InternalState {
 }
 
 impl core::types::HostClosure for InternalState {
-    fn new(&mut self) -> wasmtime::component::Resource<core::widget::Closure> {
+    fn new(&mut self) -> Resource<core::widget::Closure> {
         self.table.push(()).unwrap()
     }
 

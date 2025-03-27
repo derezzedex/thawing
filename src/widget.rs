@@ -22,9 +22,7 @@ impl core::widget::HostCheckbox for InternalState {
         closure: Resource<core::types::Closure>,
     ) -> Resource<core::widget::Checkbox> {
         let mut widget = self.get_widget::<Checkbox, _>(&checkbox);
-        widget = widget.on_toggle(move |is_checked| {
-            Message::Stateful(closure.rep(), bincode::serialize(&is_checked).unwrap())
-        });
+        widget = widget.on_toggle(move |value| Message::stateful(&closure, value));
 
         self.insert(checkbox, widget)
     }
@@ -55,7 +53,7 @@ impl core::widget::HostButton for InternalState {
         closure: Resource<core::types::Closure>,
     ) -> Resource<core::widget::Button> {
         let mut widget = self.get_widget::<Button, _>(&button);
-        widget = widget.on_press_with(move || Message::Stateless(closure.rep()));
+        widget = widget.on_press_with(move || Message::stateless(&closure));
 
         self.insert(button, widget)
     }
@@ -79,8 +77,8 @@ impl core::widget::HostColumn for InternalState {
 
     fn from_vec(
         &mut self,
-        children: Vec<wasmtime::component::Resource<core::widget::Element>>,
-    ) -> wasmtime::component::Resource<core::widget::Column> {
+        children: Vec<Resource<core::widget::Element>>,
+    ) -> Resource<core::widget::Column> {
         let capacity = children.capacity();
         let children =
             children
@@ -95,9 +93,9 @@ impl core::widget::HostColumn for InternalState {
 
     fn spacing(
         &mut self,
-        column: wasmtime::component::Resource<core::widget::Column>,
+        column: Resource<core::widget::Column>,
         amount: Pixels,
-    ) -> wasmtime::component::Resource<core::widget::Column> {
+    ) -> Resource<core::widget::Column> {
         let mut widget = self.get_widget::<Column, _>(&column);
         widget = widget.spacing(amount);
 
@@ -106,9 +104,9 @@ impl core::widget::HostColumn for InternalState {
 
     fn padding(
         &mut self,
-        column: wasmtime::component::Resource<core::widget::Column>,
+        column: Resource<core::widget::Column>,
         padding: Padding,
-    ) -> wasmtime::component::Resource<core::widget::Column> {
+    ) -> Resource<core::widget::Column> {
         let mut widget = self.get_widget::<Column, _>(&column);
         widget = widget.padding(padding);
 
@@ -117,9 +115,9 @@ impl core::widget::HostColumn for InternalState {
 
     fn width(
         &mut self,
-        column: wasmtime::component::Resource<core::widget::Column>,
+        column: Resource<core::widget::Column>,
         width: Length,
-    ) -> wasmtime::component::Resource<core::widget::Column> {
+    ) -> Resource<core::widget::Column> {
         let mut widget = self.get_widget::<Column, _>(&column);
         widget = widget.width(width);
 
@@ -128,9 +126,9 @@ impl core::widget::HostColumn for InternalState {
 
     fn height(
         &mut self,
-        column: wasmtime::component::Resource<core::widget::Column>,
+        column: Resource<core::widget::Column>,
         height: Length,
-    ) -> wasmtime::component::Resource<core::widget::Column> {
+    ) -> Resource<core::widget::Column> {
         let mut widget = self.get_widget::<Column, _>(&column);
         widget = widget.height(height);
 
@@ -139,9 +137,9 @@ impl core::widget::HostColumn for InternalState {
 
     fn max_width(
         &mut self,
-        column: wasmtime::component::Resource<core::widget::Column>,
+        column: Resource<core::widget::Column>,
         width: Pixels,
-    ) -> wasmtime::component::Resource<core::widget::Column> {
+    ) -> Resource<core::widget::Column> {
         let mut widget = self.get_widget::<Column, _>(&column);
         widget = widget.max_width(width);
 
@@ -150,9 +148,9 @@ impl core::widget::HostColumn for InternalState {
 
     fn align_x(
         &mut self,
-        column: wasmtime::component::Resource<core::widget::Column>,
+        column: Resource<core::widget::Column>,
         align: Horizontal,
-    ) -> wasmtime::component::Resource<core::widget::Column> {
+    ) -> Resource<core::widget::Column> {
         let mut widget = self.get_widget::<Column, _>(&column);
         widget = widget.align_x(align);
 
@@ -161,9 +159,9 @@ impl core::widget::HostColumn for InternalState {
 
     fn clip(
         &mut self,
-        column: wasmtime::component::Resource<core::widget::Column>,
+        column: Resource<core::widget::Column>,
         clip: bool,
-    ) -> wasmtime::component::Resource<core::widget::Column> {
+    ) -> Resource<core::widget::Column> {
         let mut widget = self.get_widget::<Column, _>(&column);
         widget = widget.clip(clip);
 
