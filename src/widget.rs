@@ -1,15 +1,15 @@
-use crate::runtime::{self, InternalState, Message};
+use crate::runtime::{self, Guest, Message};
 use core::types::{Color, Horizontal, Length, Padding, Pixels};
 use runtime::thawing::core;
 
 use wasmtime::component::Resource;
 
-pub type Column = iced::widget::Column<'static, Message>;
-pub type Button = iced::widget::Button<'static, Message>;
-pub type Text = iced::widget::Text<'static>;
-pub type Checkbox = iced::widget::Checkbox<'static, Message>;
+pub type Column<'a> = iced::widget::Column<'a, Message>;
+pub type Button<'a> = iced::widget::Button<'a, Message>;
+pub type Text<'a> = iced::widget::Text<'a>;
+pub type Checkbox<'a> = iced::widget::Checkbox<'a, Message>;
 
-impl core::widget::HostCheckbox for InternalState {
+impl<'a> core::widget::HostCheckbox for Guest<'a> {
     fn new(&mut self, label: String, is_checked: bool) -> Resource<core::widget::Checkbox> {
         let checkbox = Checkbox::new(label, is_checked);
 
@@ -39,7 +39,7 @@ impl core::widget::HostCheckbox for InternalState {
     }
 }
 
-impl core::widget::HostButton for InternalState {
+impl<'a> core::widget::HostButton for Guest<'a> {
     fn new(&mut self, content: Resource<core::widget::Element>) -> Resource<core::widget::Button> {
         let content = self.get(&content);
         let button = Button::new(content);
@@ -70,7 +70,7 @@ impl core::widget::HostButton for InternalState {
     }
 }
 
-impl core::widget::HostColumn for InternalState {
+impl<'a> core::widget::HostColumn for Guest<'a> {
     fn new(&mut self) -> Resource<core::widget::Column> {
         self.push(Column::new())
     }
@@ -212,7 +212,7 @@ impl core::widget::HostColumn for InternalState {
     }
 }
 
-impl core::widget::HostText for InternalState {
+impl<'a> core::widget::HostText for Guest<'a> {
     fn new(&mut self, fragment: String) -> Resource<core::widget::Text> {
         self.push(Text::new(fragment))
     }

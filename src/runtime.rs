@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 use iced::futures;
 use iced::futures::channel::mpsc::channel;
 use iced::futures::{SinkExt, Stream, StreamExt};
-use iced::Task;
+use iced::{Element, Task};
 use notify_debouncer_mini::notify::RecursiveMode;
 use notify_debouncer_mini::{new_debouncer, DebouncedEventKind};
 use wasmtime::component::{Component, Linker, Resource, ResourceAny, ResourceTable};
@@ -52,17 +52,17 @@ impl Message {
     }
 }
 
-pub(crate) struct State {
+pub(crate) struct State<'a> {
     path: PathBuf,
-    store: Rc<RefCell<Store<InternalState>>>,
+    store: Rc<RefCell<Store<Guest<'a>>>>,
     bindings: Rc<RefCell<Thawing>>,
     table: Rc<RefCell<ResourceAny>>,
 
     engine: Engine,
-    linker: Linker<InternalState>,
+    linker: Linker<Guest<'a>>,
 }
 
-impl State {
+impl<'a> State<'a> {
     pub fn new(path: impl AsRef<Path>) -> Self {
         let path = path.as_ref().to_path_buf();
         let engine = Engine::default();
@@ -71,7 +71,7 @@ impl State {
         let mut linker = Linker::new(&engine);
         Thawing::add_to_linker(&mut linker, |state| state).unwrap();
 
-        let mut store = Store::new(&engine, InternalState::default());
+        let mut store = Store::new(&engine, Guest::default());
         let bindings = Thawing::instantiate(&mut store, &component, &linker).unwrap();
 
         let table = bindings
@@ -95,7 +95,7 @@ impl State {
 
         let mut store = self.store.borrow_mut();
         let mut bindings = self.bindings.borrow_mut();
-        *store = Store::new(&self.engine, InternalState::default());
+        *store = Store::new(&self.engine, Guest::default());
         *bindings = Thawing::instantiate(&mut *store, &component, &self.linker).unwrap();
 
         let mut table = self.table.borrow_mut();
@@ -134,7 +134,7 @@ impl State {
             .unwrap()
     }
 
-    pub fn view(&self, state: Vec<u8>) -> iced::Element<'static, Message> {
+    pub fn view(&self, state: Vec<u8>) -> iced::Element<'a, Message> {
         let mut store = self.store.borrow_mut();
         let mut table = self.table.borrow_mut();
         table.resource_drop(&mut *store).unwrap();
@@ -170,25 +170,24 @@ impl State {
 }
 
 type Table<T> = HashMap<u32, T>;
-pub type Element = iced::Element<'static, Message>;
 
 #[derive(Default)]
-pub(crate) struct InternalState {
+pub(crate) struct Guest<'a> {
     pub(crate) table: ResourceTable,
-    pub(crate) element: Table<Element>,
+    pub(crate) element: Table<Element<'a, Message>>,
 }
 
-impl InternalState {
+impl<'a> Guest<'a> {
     pub fn push<W>(&mut self, widget: W) -> Resource<Empty>
     where
-        W: Into<Element>,
+        W: Into<Element<'a, Message>>,
     {
         let res = self.table.push(()).unwrap();
         self.element.insert(res.rep(), widget.into());
         res
     }
 
-    pub fn get<R>(&mut self, element: &Resource<R>) -> Element
+    pub fn get<R>(&mut self, element: &Resource<R>) -> Element<'a, Message>
     where
         R: 'static,
     {
@@ -206,24 +205,24 @@ impl InternalState {
     pub fn insert<E, R>(&mut self, resource: Resource<R>, widget: E) -> Resource<R>
     where
         R: 'static,
-        E: Into<Element>,
+        E: Into<Element<'a, Message>>,
     {
         self.element.insert(resource.rep(), widget.into());
         Resource::new_own(resource.rep())
     }
 }
 
-impl core::widget::Host for InternalState {}
-impl core::types::Host for InternalState {}
+impl<'a> core::widget::Host for Guest<'a> {}
+impl<'a> core::types::Host for Guest<'a> {}
 
-impl core::types::HostElement for InternalState {
+impl<'a> core::types::HostElement for Guest<'a> {
     fn drop(&mut self, element: Resource<core::types::Element>) -> wasmtime::Result<()> {
         self.element.remove(&element.rep());
         Ok(())
     }
 }
 
-impl core::types::HostClosure for InternalState {
+impl<'a> core::types::HostClosure for Guest<'a> {
     fn new(&mut self) -> Resource<core::widget::Closure> {
         self.table.push(()).unwrap()
     }

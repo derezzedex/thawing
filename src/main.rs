@@ -38,7 +38,7 @@ impl Counter {
 
 struct Thawing {
     state: Counter,
-    runtime: runtime::State,
+    runtime: runtime::State<'static>,
 }
 
 impl Thawing {
