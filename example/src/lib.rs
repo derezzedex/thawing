@@ -3,9 +3,9 @@ use thawing::{Application, Center, Element};
 
 #[derive(Debug, Clone, serde::Serialize)]
 enum Message {
+    Toggled(bool),
     Increment,
     Decrement,
-    Toggled(bool),
 }
 
 #[derive(serde::Deserialize)]
