@@ -107,7 +107,20 @@ impl<'a> State<'a> {
             .unwrap();
     }
 
-    pub fn call(&mut self, closure: u32) -> Vec<u8> {
+    pub fn call<Message: serde::de::DeserializeOwned>(
+        &mut self,
+        closure: u32,
+        data: impl Into<Option<Bytes>>,
+    ) -> Message {
+        let bytes = match data.into() {
+            Some(bytes) => self.call_stateful(closure, bytes),
+            None => self.call_stateless(closure),
+        };
+
+        bincode::deserialize(&bytes).unwrap()
+    }
+
+    fn call_stateless(&mut self, closure: u32) -> Vec<u8> {
         self.bindings
             .borrow()
             .thawing_core_guest()
@@ -120,7 +133,7 @@ impl<'a> State<'a> {
             .unwrap()
     }
 
-    pub fn call_with(&mut self, closure: u32, state: Bytes) -> Vec<u8> {
+    fn call_stateful(&mut self, closure: u32, bytes: Bytes) -> Vec<u8> {
         self.bindings
             .borrow_mut()
             .thawing_core_guest()
@@ -129,12 +142,12 @@ impl<'a> State<'a> {
                 &mut *self.store.borrow_mut(),
                 *self.table.borrow(),
                 Resource::new_own(closure),
-                &state,
+                &bytes,
             )
             .unwrap()
     }
 
-    pub fn view(&self, state: Vec<u8>) -> iced::Element<'a, Message> {
+    pub fn view<T: serde::Serialize>(&self, state: &T) -> iced::Element<'a, Message> {
         let mut store = self.store.borrow_mut();
         let mut table = self.table.borrow_mut();
         table.resource_drop(&mut *store).unwrap();
@@ -149,12 +162,14 @@ impl<'a> State<'a> {
             .call_constructor(&mut *store)
             .unwrap();
 
+        let bytes = bincode::serialize(state).unwrap();
+
         let app = self
             .bindings
             .borrow()
             .thawing_core_guest()
             .app()
-            .call_constructor(&mut *store, &state)
+            .call_constructor(&mut *store, &bytes)
             .unwrap();
 
         let view = self

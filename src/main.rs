@@ -54,13 +54,8 @@ impl Thawing {
 
     fn update(&mut self, message: runtime::Message) {
         match message {
-            runtime::Message::Guest(id, data) => {
-                let bytes = match data {
-                    Some(bytes) => self.runtime.call_with(id, bytes),
-                    None => self.runtime.call(id),
-                };
-
-                let message = bincode::deserialize(&bytes).unwrap();
+            runtime::Message::Guest(closure, data) => {
+                let message = self.runtime.call(closure, data);
                 self.state.update(message);
             }
             runtime::Message::Thawing(elapsed) => {
@@ -72,6 +67,6 @@ impl Thawing {
     }
 
     fn view(&self) -> iced::Element<runtime::Message> {
-        self.runtime.view(bincode::serialize(&self.state).unwrap())
+        self.runtime.view(&self.state)
     }
 }
