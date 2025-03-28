@@ -52,17 +52,25 @@ impl Message {
     }
 }
 
-pub(crate) struct State<'a> {
+pub(crate) struct State<'a, Theme, Renderer> {
     path: PathBuf,
-    store: Rc<RefCell<Store<Guest<'a>>>>,
+    store: Rc<RefCell<Store<Guest<'a, Theme, Renderer>>>>,
     bindings: Rc<RefCell<Thawing>>,
     table: Rc<RefCell<ResourceAny>>,
 
     engine: Engine,
-    linker: Linker<Guest<'a>>,
+    linker: Linker<Guest<'a, Theme, Renderer>>,
 }
 
-impl<'a> State<'a> {
+impl<'a, Theme, Renderer> State<'a, Theme, Renderer>
+where
+    Renderer: 'a + iced::advanced::Renderer + iced::advanced::text::Renderer,
+    Theme: 'a
+        + iced::widget::checkbox::Catalog
+        + iced::widget::button::Catalog
+        + iced::widget::text::Catalog,
+    <Theme as iced::widget::text::Catalog>::Class<'a>: From<iced::widget::text::StyleFn<'a, Theme>>,
+{
     pub fn new(path: impl AsRef<Path>) -> Self {
         let path = path.as_ref().to_path_buf();
         let engine = Engine::default();
@@ -71,7 +79,7 @@ impl<'a> State<'a> {
         let mut linker = Linker::new(&engine);
         Thawing::add_to_linker(&mut linker, |state| state).unwrap();
 
-        let mut store = Store::new(&engine, Guest::default());
+        let mut store = Store::new(&engine, Guest::new());
         let bindings = Thawing::instantiate(&mut store, &component, &linker).unwrap();
 
         let table = bindings
@@ -95,7 +103,7 @@ impl<'a> State<'a> {
 
         let mut store = self.store.borrow_mut();
         let mut bindings = self.bindings.borrow_mut();
-        *store = Store::new(&self.engine, Guest::default());
+        *store = Store::new(&self.engine, Guest::new());
         *bindings = Thawing::instantiate(&mut *store, &component, &self.linker).unwrap();
 
         let mut table = self.table.borrow_mut();
@@ -147,7 +155,10 @@ impl<'a> State<'a> {
             .unwrap()
     }
 
-    pub fn view<T: serde::Serialize>(&self, state: &T) -> iced::Element<'a, Message> {
+    pub fn view<T: serde::Serialize>(
+        &self,
+        state: &T,
+    ) -> iced::Element<'a, Message, Theme, Renderer> {
         let mut store = self.store.borrow_mut();
         let mut table = self.table.borrow_mut();
         table.resource_drop(&mut *store).unwrap();
@@ -187,22 +198,34 @@ impl<'a> State<'a> {
 type Table<T> = HashMap<u32, T>;
 
 #[derive(Default)]
-pub(crate) struct Guest<'a> {
+pub(crate) struct Guest<'a, Theme, Renderer> {
     pub(crate) table: ResourceTable,
-    pub(crate) element: Table<Element<'a, Message>>,
+    pub(crate) element: Table<Element<'a, Message, Theme, Renderer>>,
 }
 
-impl<'a> Guest<'a> {
+impl<'a, Theme, Renderer> Guest<'a, Theme, Renderer> {
+    fn new() -> Self {
+        Self {
+            table: ResourceTable::new(),
+            element: Table::new(),
+        }
+    }
+}
+
+impl<'a, Theme, Renderer> Guest<'a, Theme, Renderer>
+where
+    Renderer: iced::advanced::Renderer,
+{
     pub fn push<W>(&mut self, widget: W) -> Resource<Empty>
     where
-        W: Into<Element<'a, Message>>,
+        W: Into<Element<'a, Message, Theme, Renderer>>,
     {
         let res = self.table.push(()).unwrap();
         self.element.insert(res.rep(), widget.into());
         res
     }
 
-    pub fn get<R>(&mut self, element: &Resource<R>) -> Element<'a, Message>
+    pub fn get<R>(&mut self, element: &Resource<R>) -> Element<'a, Message, Theme, Renderer>
     where
         R: 'static,
     {
@@ -212,7 +235,7 @@ impl<'a> Guest<'a> {
     pub fn get_widget<W, R>(&mut self, element: &Resource<R>) -> W
     where
         R: 'static,
-        W: iced::advanced::Widget<Message, iced::Theme, iced::Renderer>,
+        W: iced::advanced::Widget<Message, Theme, Renderer>,
     {
         *self.get(element).downcast::<W>()
     }
@@ -220,24 +243,36 @@ impl<'a> Guest<'a> {
     pub fn insert<E, R>(&mut self, resource: Resource<R>, widget: E) -> Resource<R>
     where
         R: 'static,
-        E: Into<Element<'a, Message>>,
+        E: Into<Element<'a, Message, Theme, Renderer>>,
     {
         self.element.insert(resource.rep(), widget.into());
         Resource::new_own(resource.rep())
     }
 }
 
-impl<'a> core::widget::Host for Guest<'a> {}
-impl<'a> core::types::Host for Guest<'a> {}
+// TODO(derezzedex): fix this
+// this forces users to have implemented `Catalog` in their `Theme` for every widget available
+impl<'a, Theme, Renderer> core::widget::Host for Guest<'a, Theme, Renderer>
+where
+    Renderer: 'a + iced::advanced::Renderer + iced::advanced::text::Renderer,
+    Theme: 'a
+        + iced::widget::checkbox::Catalog
+        + iced::widget::button::Catalog
+        + iced::widget::text::Catalog,
+    <Theme as iced::widget::text::Catalog>::Class<'a>: From<iced::widget::text::StyleFn<'a, Theme>>,
+{
+}
 
-impl<'a> core::types::HostElement for Guest<'a> {
+impl<'a, Theme, Renderer> core::types::Host for Guest<'a, Theme, Renderer> {}
+
+impl<'a, Theme, Renderer> core::types::HostElement for Guest<'a, Theme, Renderer> {
     fn drop(&mut self, element: Resource<core::types::Element>) -> wasmtime::Result<()> {
         self.element.remove(&element.rep());
         Ok(())
     }
 }
 
-impl<'a> core::types::HostClosure for Guest<'a> {
+impl<'a, Theme, Renderer> core::types::HostClosure for Guest<'a, Theme, Renderer> {
     fn new(&mut self) -> Resource<core::widget::Closure> {
         self.table.push(()).unwrap()
     }

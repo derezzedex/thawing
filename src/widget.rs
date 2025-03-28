@@ -4,12 +4,16 @@ use runtime::thawing::core;
 
 use wasmtime::component::Resource;
 
-pub type Column<'a> = iced::widget::Column<'a, Message>;
-pub type Button<'a> = iced::widget::Button<'a, Message>;
-pub type Text<'a> = iced::widget::Text<'a>;
-pub type Checkbox<'a> = iced::widget::Checkbox<'a, Message>;
+pub type Column<'a, Theme, Renderer> = iced::widget::Column<'a, Message, Theme, Renderer>;
+pub type Button<'a, Theme, Renderer> = iced::widget::Button<'a, Message, Theme, Renderer>;
+pub type Text<'a, Theme, Renderer> = iced::widget::Text<'a, Theme, Renderer>;
+pub type Checkbox<'a, Theme, Renderer> = iced::widget::Checkbox<'a, Message, Theme, Renderer>;
 
-impl<'a> core::widget::HostCheckbox for Guest<'a> {
+impl<'a, Theme, Renderer> core::widget::HostCheckbox for Guest<'a, Theme, Renderer>
+where
+    Renderer: 'a + iced::advanced::text::Renderer,
+    Theme: 'a + iced::widget::checkbox::Catalog,
+{
     fn new(&mut self, label: String, is_checked: bool) -> Resource<core::widget::Checkbox> {
         let checkbox = Checkbox::new(label, is_checked);
 
@@ -21,7 +25,7 @@ impl<'a> core::widget::HostCheckbox for Guest<'a> {
         checkbox: Resource<core::widget::Checkbox>,
         closure: Resource<core::types::Closure>,
     ) -> Resource<core::widget::Checkbox> {
-        let mut widget = self.get_widget::<Checkbox, _>(&checkbox);
+        let mut widget = self.get_widget::<Checkbox<Theme, Renderer>, _>(&checkbox);
         widget = widget.on_toggle(move |value| Message::stateful(&closure, value));
 
         self.insert(checkbox, widget)
@@ -39,7 +43,11 @@ impl<'a> core::widget::HostCheckbox for Guest<'a> {
     }
 }
 
-impl<'a> core::widget::HostButton for Guest<'a> {
+impl<'a, Theme, Renderer> core::widget::HostButton for Guest<'a, Theme, Renderer>
+where
+    Renderer: 'a + iced::advanced::Renderer,
+    Theme: 'a + iced::widget::button::Catalog,
+{
     fn new(&mut self, content: Resource<core::widget::Element>) -> Resource<core::widget::Button> {
         let content = self.get(&content);
         let button = Button::new(content);
@@ -52,7 +60,7 @@ impl<'a> core::widget::HostButton for Guest<'a> {
         button: Resource<core::widget::Button>,
         closure: Resource<core::types::Closure>,
     ) -> Resource<core::widget::Button> {
-        let mut widget = self.get_widget::<Button, _>(&button);
+        let mut widget = self.get_widget::<Button<Theme, Renderer>, _>(&button);
         widget = widget.on_press_with(move || Message::stateless(&closure));
 
         self.insert(button, widget)
@@ -70,7 +78,11 @@ impl<'a> core::widget::HostButton for Guest<'a> {
     }
 }
 
-impl<'a> core::widget::HostColumn for Guest<'a> {
+impl<'a, Theme, Renderer> core::widget::HostColumn for Guest<'a, Theme, Renderer>
+where
+    Renderer: 'a + iced::advanced::Renderer,
+    Theme: 'a,
+{
     fn new(&mut self) -> Resource<core::widget::Column> {
         self.push(Column::new())
     }
@@ -96,7 +108,7 @@ impl<'a> core::widget::HostColumn for Guest<'a> {
         column: Resource<core::widget::Column>,
         amount: Pixels,
     ) -> Resource<core::widget::Column> {
-        let mut widget = self.get_widget::<Column, _>(&column);
+        let mut widget = self.get_widget::<Column<Theme, Renderer>, _>(&column);
         widget = widget.spacing(amount);
 
         self.insert(column, widget)
@@ -107,7 +119,7 @@ impl<'a> core::widget::HostColumn for Guest<'a> {
         column: Resource<core::widget::Column>,
         padding: Padding,
     ) -> Resource<core::widget::Column> {
-        let mut widget = self.get_widget::<Column, _>(&column);
+        let mut widget = self.get_widget::<Column<Theme, Renderer>, _>(&column);
         widget = widget.padding(padding);
 
         self.insert(column, widget)
@@ -118,7 +130,7 @@ impl<'a> core::widget::HostColumn for Guest<'a> {
         column: Resource<core::widget::Column>,
         width: Length,
     ) -> Resource<core::widget::Column> {
-        let mut widget = self.get_widget::<Column, _>(&column);
+        let mut widget = self.get_widget::<Column<Theme, Renderer>, _>(&column);
         widget = widget.width(width);
 
         self.insert(column, widget)
@@ -129,7 +141,7 @@ impl<'a> core::widget::HostColumn for Guest<'a> {
         column: Resource<core::widget::Column>,
         height: Length,
     ) -> Resource<core::widget::Column> {
-        let mut widget = self.get_widget::<Column, _>(&column);
+        let mut widget = self.get_widget::<Column<Theme, Renderer>, _>(&column);
         widget = widget.height(height);
 
         self.insert(column, widget)
@@ -140,7 +152,7 @@ impl<'a> core::widget::HostColumn for Guest<'a> {
         column: Resource<core::widget::Column>,
         width: Pixels,
     ) -> Resource<core::widget::Column> {
-        let mut widget = self.get_widget::<Column, _>(&column);
+        let mut widget = self.get_widget::<Column<Theme, Renderer>, _>(&column);
         widget = widget.max_width(width);
 
         self.insert(column, widget)
@@ -151,7 +163,7 @@ impl<'a> core::widget::HostColumn for Guest<'a> {
         column: Resource<core::widget::Column>,
         align: Horizontal,
     ) -> Resource<core::widget::Column> {
-        let mut widget = self.get_widget::<Column, _>(&column);
+        let mut widget = self.get_widget::<Column<Theme, Renderer>, _>(&column);
         widget = widget.align_x(align);
 
         self.insert(column, widget)
@@ -162,7 +174,7 @@ impl<'a> core::widget::HostColumn for Guest<'a> {
         column: Resource<core::widget::Column>,
         clip: bool,
     ) -> Resource<core::widget::Column> {
-        let mut widget = self.get_widget::<Column, _>(&column);
+        let mut widget = self.get_widget::<Column<Theme, Renderer>, _>(&column);
         widget = widget.clip(clip);
 
         self.insert(column, widget)
@@ -174,7 +186,7 @@ impl<'a> core::widget::HostColumn for Guest<'a> {
         child: Resource<core::widget::Element>,
     ) -> Resource<core::widget::Column> {
         let content = self.get(&child);
-        let mut widget = self.get_widget::<Column, _>(&column);
+        let mut widget = self.get_widget::<Column<Theme, Renderer>, _>(&column);
         widget = widget.push(content);
 
         self.insert(column, widget)
@@ -194,7 +206,7 @@ impl<'a> core::widget::HostColumn for Guest<'a> {
                     children
                 });
 
-        let mut widget = self.get_widget::<Column, _>(&column);
+        let mut widget = self.get_widget::<Column<Theme, Renderer>, _>(&column);
         widget = widget.extend(children);
 
         self.insert(column, widget)
@@ -212,7 +224,12 @@ impl<'a> core::widget::HostColumn for Guest<'a> {
     }
 }
 
-impl<'a> core::widget::HostText for Guest<'a> {
+impl<'a, Theme, Renderer> core::widget::HostText for Guest<'a, Theme, Renderer>
+where
+    Renderer: 'a + iced::advanced::text::Renderer,
+    Theme: 'a + iced::widget::text::Catalog,
+    Theme::Class<'a>: From<iced::widget::text::StyleFn<'a, Theme>>,
+{
     fn new(&mut self, fragment: String) -> Resource<core::widget::Text> {
         self.push(Text::new(fragment))
     }
@@ -222,7 +239,7 @@ impl<'a> core::widget::HostText for Guest<'a> {
         text: Resource<core::widget::Text>,
         size: Pixels,
     ) -> Resource<core::widget::Text> {
-        let mut widget = self.get_widget::<Text, _>(&text);
+        let mut widget = self.get_widget::<Text<Theme, Renderer>, _>(&text);
         widget = widget.size(size);
 
         self.insert(text, widget)
@@ -233,7 +250,7 @@ impl<'a> core::widget::HostText for Guest<'a> {
         text: Resource<core::widget::Text>,
         color: Color,
     ) -> Resource<core::widget::Text> {
-        let mut widget = self.get_widget::<Text, _>(&text);
+        let mut widget = self.get_widget::<Text<Theme, Renderer>, _>(&text);
         widget = widget.color(color);
 
         self.insert(text, widget)
