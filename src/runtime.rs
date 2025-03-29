@@ -1,10 +1,12 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
+use iced::advanced::widget;
 use iced::futures;
 use iced::futures::channel::mpsc::channel;
 use iced::futures::{SinkExt, Stream, StreamExt};
@@ -31,24 +33,115 @@ wasmtime::component::bindgen!({
     },
 });
 
-pub fn watch(path: impl AsRef<Path>) -> Task<Message> {
-    Task::stream(watch_file(path.as_ref()))
+#[derive(Debug, Clone)]
+pub struct Id(pub(crate) widget::Id);
+
+impl Id {
+    pub fn new() -> Self {
+        Self(widget::Id::unique())
+    }
+}
+
+impl From<Id> for widget::Id {
+    fn from(id: Id) -> Self {
+        id.0
+    }
+}
+
+pub fn watch<Message, Theme, Renderer>(id: Id, path: impl AsRef<Path>) -> Task<()>
+where
+    Message: Send + 'static,
+    Theme: Send + 'static,
+    Renderer: Send + 'static,
+{
+    Task::stream(watch_file(path.as_ref())).then(move |_| reload::<Theme, Renderer>(id.clone()))
+}
+
+// TODO(derezzedex): if `watch` is used instead, a `Widget::update` call
+// is needed (e.g. moving the mouse, or focusing the window) to display changes;
+// this sends a message to the application, forcing a `Widget::update`
+pub fn watch_and_notify<Message, Theme, Renderer>(
+    id: Id,
+    path: impl AsRef<Path>,
+    on_reload: Message,
+) -> Task<Message>
+where
+    Message: Clone + Send + 'static,
+    Theme: Send + 'static,
+    Renderer: Send + 'static,
+{
+    watch::<Message, Theme, Renderer>(id, path).map(move |_| on_reload.clone())
+}
+
+pub fn reload<Theme: Send + 'static, Renderer: Send + 'static>(id: Id) -> Task<()> {
+    struct Reload<Theme, Renderer> {
+        id: Id,
+        theme: PhantomData<Theme>,
+        renderer: PhantomData<Renderer>,
+    }
+
+    impl<Theme: Send + 'static, Renderer: Send + 'static> widget::Operation
+        for Reload<Theme, Renderer>
+    {
+        fn custom(
+            &mut self,
+            id: Option<&widget::Id>,
+            _bounds: iced::Rectangle,
+            state: &mut dyn std::any::Any,
+        ) {
+            match id {
+                Some(id) if id == &self.id.0 => {
+                    if let Some(state) = state.downcast_mut::<crate::Inner<Theme, Renderer>>() {
+                        state.runtime.reload();
+                        state.invalidated = true;
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        fn container(
+            &mut self,
+            _id: Option<&widget::Id>,
+            _bounds: iced::Rectangle,
+            operate_on_children: &mut dyn FnMut(&mut dyn widget::Operation<()>),
+        ) {
+            operate_on_children(self)
+        }
+
+        fn finish(&self) -> widget::operation::Outcome<()> {
+            widget::operation::Outcome::Some(())
+        }
+    }
+
+    widget::operate(Reload {
+        id,
+        theme: PhantomData::<Theme>,
+        renderer: PhantomData::<Renderer>,
+    })
 }
 
 #[derive(Debug, Clone)]
-pub enum Message {
-    Guest(u32, Option<Bytes>),
-    Thawing(Duration),
+pub struct Message {
+    pub(crate) closure: u32,
+    pub(crate) data: Option<Bytes>,
 }
 
 impl Message {
     pub fn stateless<U: 'static>(resource: &Resource<U>) -> Self {
-        Self::Guest(resource.rep(), None)
+        Self {
+            closure: resource.rep(),
+            data: None,
+        }
     }
 
     pub fn stateful<T: serde::Serialize, U: 'static>(resource: &Resource<U>, value: T) -> Self {
         let bytes = bincode::serialize(&value).unwrap();
-        Self::Guest(resource.rep(), Some(bytes))
+
+        Self {
+            closure: resource.rep(),
+            data: Some(bytes),
+        }
     }
 }
 
@@ -60,6 +153,25 @@ pub(crate) struct State<'a, Theme, Renderer> {
 
     engine: Engine,
     linker: Linker<Guest<'a, Theme, Renderer>>,
+}
+
+impl<'a, Theme, Renderer> State<'a, Theme, Renderer> {
+    pub fn reload(&mut self) {
+        let component = Component::from_file(&self.engine, &self.path).unwrap();
+
+        let mut store = self.store.borrow_mut();
+        let mut bindings = self.bindings.borrow_mut();
+        *store = Store::new(&self.engine, Guest::new());
+        *bindings = Thawing::instantiate(&mut *store, &component, &self.linker).unwrap();
+
+        let mut table = self.table.borrow_mut();
+
+        *table = bindings
+            .thawing_core_guest()
+            .table()
+            .call_constructor(&mut *store)
+            .unwrap();
+    }
 }
 
 impl<'a, Theme, Renderer> State<'a, Theme, Renderer>
@@ -96,23 +208,6 @@ where
             engine,
             linker,
         }
-    }
-
-    pub fn reload(&mut self) {
-        let component = Component::from_file(&self.engine, &self.path).unwrap();
-
-        let mut store = self.store.borrow_mut();
-        let mut bindings = self.bindings.borrow_mut();
-        *store = Store::new(&self.engine, Guest::new());
-        *bindings = Thawing::instantiate(&mut *store, &component, &self.linker).unwrap();
-
-        let mut table = self.table.borrow_mut();
-
-        *table = bindings
-            .thawing_core_guest()
-            .table()
-            .call_constructor(&mut *store)
-            .unwrap();
     }
 
     pub fn call<Message: serde::de::DeserializeOwned>(
@@ -283,7 +378,7 @@ impl<'a, Theme, Renderer> core::types::HostClosure for Guest<'a, Theme, Renderer
     }
 }
 
-fn watch_file(path: &Path) -> impl Stream<Item = Message> {
+fn watch_file(path: &Path) -> impl Stream<Item = ()> {
     let path = path.canonicalize().expect("failed to canonicalize path");
 
     iced::stream::channel(10, |mut output| async move {
@@ -327,10 +422,7 @@ fn watch_file(path: &Path) -> impl Stream<Item = Message> {
                     .expect("Failed to build component");
                 tracing::info!("Component built in {:?}", timer.elapsed());
 
-                output
-                    .send(Message::Thawing(timer.elapsed()))
-                    .await
-                    .expect("Failed to send message");
+                output.send(()).await.expect("Failed to send message");
             }
         }
     })

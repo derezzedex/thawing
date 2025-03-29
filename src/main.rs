@@ -3,8 +3,9 @@ mod types;
 mod widget;
 
 use std::cell::OnceCell;
+use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, LazyLock, Mutex};
 
 use iced::advanced::widget::{tree, Tree};
 use iced::advanced::{self, layout, mouse, renderer, Layout, Shell, Widget};
@@ -13,15 +14,19 @@ use iced::{Element, Length, Size};
 fn main() -> iced::Result {
     tracing_subscriber::fmt::init();
 
-    iced::application("A cool counter [thawing]", Counter::update, Counter::view).run()
+    iced::application("A cool counter [thawing]", Counter::update, Counter::view)
+        .run_with(Counter::new)
 }
 
 pub const SRC_PATH: &'static str = "./example/src/lib.rs";
 pub const WASM_PATH: &'static str =
     "./example/target/wasm32-unknown-unknown/debug/thawing_example.wasm";
 
+static ID: LazyLock<runtime::Id> = LazyLock::new(|| runtime::Id::new());
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum Message {
+    #[serde(skip)]
     Reload,
     Toggled(bool),
     Increment,
@@ -35,51 +40,66 @@ struct Counter {
 }
 
 impl Counter {
+    fn new() -> (Self, iced::Task<Message>) {
+        (
+            Self::default(),
+            runtime::watch_and_notify::<Message, iced::Theme, iced::Renderer>(
+                ID.clone(),
+                SRC_PATH,
+                Message::Reload,
+            ),
+        )
+    }
+
     fn update(&mut self, message: Message) {
         match message {
+            Message::Reload => {
+                tracing::info!("Reloaded!");
+            }
             Message::Toggled(is_checked) => self.is_checked = is_checked,
             Message::Increment => self.value += 1,
             Message::Decrement => self.value -= 1,
-            Message::Reload => {
-                panic!("should reload!");
-            }
         }
     }
 
     fn view(&self) -> iced::Element<Message> {
-        Thawing::from_file(WASM_PATH, self, || Message::Reload).into()
+        Thawing::from_file(WASM_PATH, self).id(ID.clone()).into()
     }
 }
 
 pub struct Thawing<'a, State, Message> {
+    id: Option<runtime::Id>,
     width: Length,
     height: Length,
 
     path: PathBuf,
     bytes: Arc<Vec<u8>>,
-    state: std::marker::PhantomData<State>,
     tree: Mutex<OnceCell<Tree>>,
-    on_reload: Box<dyn Fn() -> Message + 'a>,
+
+    state: PhantomData<&'a State>,
+    message: PhantomData<Message>,
 }
 
 impl<'a, State, Message> Thawing<'a, State, Message>
 where
     State: serde::Serialize,
 {
-    pub fn from_file<'b>(
-        path: impl AsRef<Path>,
-        state: &'b State,
-        on_reload: impl Fn() -> Message + 'a,
-    ) -> Self {
+    pub fn from_file<'b>(path: impl AsRef<Path>, state: &'b State) -> Self {
         Self {
+            id: None,
             path: path.as_ref().to_path_buf(),
             bytes: Arc::new(bincode::serialize(state).unwrap()),
             width: Length::Shrink,
             height: Length::Shrink,
             tree: Mutex::new(OnceCell::new()),
-            state: std::marker::PhantomData,
-            on_reload: Box::new(on_reload),
+            state: PhantomData,
+            message: PhantomData,
         }
+    }
+
+    pub fn id(mut self, id: impl Into<runtime::Id>) -> Self {
+        self.id = Some(id.into());
+        self
     }
 }
 
@@ -101,7 +121,8 @@ where
     }
 }
 
-struct Inner<Theme, Renderer> {
+pub(crate) struct Inner<Theme, Renderer> {
+    invalidated: bool,
     bytes: Arc<Vec<u8>>,
     runtime: runtime::State<'static, Theme, Renderer>,
     element: Element<'static, runtime::Message, Theme, Renderer>,
@@ -122,19 +143,20 @@ where
         let element = runtime.view(&bytes);
 
         Self {
+            invalidated: false,
             bytes,
             runtime,
             element,
         }
     }
 
-    fn diff(&mut self, other: Arc<Vec<u8>>) {
-        if Arc::ptr_eq(&self.bytes, &other) {
+    fn diff(&mut self, other: &Arc<Vec<u8>>) {
+        if Arc::ptr_eq(&self.bytes, other) {
             return;
         }
 
-        self.element = self.runtime.view(&other);
-        self.bytes = other;
+        self.element = self.runtime.view(other);
+        self.bytes = Arc::clone(other);
     }
 }
 
@@ -168,8 +190,10 @@ where
     }
 
     fn diff(&self, tree: &mut Tree) {
+        tracing::warn!("diffing!");
         let state = tree.state.downcast_mut::<Inner<Theme, Renderer>>();
-        state.diff(Arc::clone(&self.bytes));
+        state.diff(&self.bytes);
+
         state.element.as_widget().diff(&mut tree.children[0]);
     }
 
@@ -191,6 +215,25 @@ where
             .layout(&mut tree.children[0], renderer, limits)
     }
 
+    fn operate(
+        &self,
+        tree: &mut Tree,
+        layout: Layout<'_>,
+        renderer: &Renderer,
+        operation: &mut dyn advanced::widget::Operation,
+    ) {
+        let id = self.id.as_ref().map(|id| &id.0);
+        let state = tree.state.downcast_mut::<Inner<Theme, Renderer>>();
+
+        operation.custom(id, layout.bounds(), &mut *state);
+        operation.container(id, layout.bounds(), &mut |operation| {
+            state
+                .element
+                .as_widget()
+                .operate(&mut tree.children[0], layout, renderer, operation);
+        });
+    }
+
     fn update(
         &mut self,
         tree: &mut Tree,
@@ -207,6 +250,12 @@ where
 
         let state = tree.state.downcast_mut::<Inner<Theme, Renderer>>();
 
+        if state.invalidated {
+            shell.invalidate_widgets();
+            shell.request_redraw();
+            state.invalidated = false;
+        }
+
         state.element.as_widget_mut().update(
             &mut tree.children[0],
             event,
@@ -218,9 +267,8 @@ where
             viewport,
         );
 
-        shell.merge(guest, move |message| match message {
-            runtime::Message::Thawing(_) => (self.on_reload)(),
-            runtime::Message::Guest(closure, data) => state.runtime.call(closure, data),
+        shell.merge(guest, move |message| {
+            state.runtime.call(message.closure, message.data)
         });
     }
 
