@@ -116,7 +116,7 @@ where
     }
 
     pub fn call<Message: serde::de::DeserializeOwned>(
-        &mut self,
+        &self,
         closure: u32,
         data: impl Into<Option<Bytes>>,
     ) -> Message {
@@ -128,7 +128,7 @@ where
         bincode::deserialize(&bytes).unwrap()
     }
 
-    fn call_stateless(&mut self, closure: u32) -> Vec<u8> {
+    fn call_stateless(&self, closure: u32) -> Vec<u8> {
         self.bindings
             .borrow()
             .thawing_core_guest()
@@ -141,7 +141,7 @@ where
             .unwrap()
     }
 
-    fn call_stateful(&mut self, closure: u32, bytes: Bytes) -> Vec<u8> {
+    fn call_stateful(&self, closure: u32, bytes: Bytes) -> Vec<u8> {
         self.bindings
             .borrow_mut()
             .thawing_core_guest()
@@ -155,10 +155,7 @@ where
             .unwrap()
     }
 
-    pub fn view<T: serde::Serialize>(
-        &self,
-        state: &T,
-    ) -> iced::Element<'a, Message, Theme, Renderer> {
+    pub fn view(&self, bytes: &Vec<u8>) -> iced::Element<'a, Message, Theme, Renderer> {
         let mut store = self.store.borrow_mut();
         let mut table = self.table.borrow_mut();
         table.resource_drop(&mut *store).unwrap();
@@ -173,14 +170,12 @@ where
             .call_constructor(&mut *store)
             .unwrap();
 
-        let bytes = bincode::serialize(state).unwrap();
-
         let app = self
             .bindings
             .borrow()
             .thawing_core_guest()
             .app()
-            .call_constructor(&mut *store, &bytes)
+            .call_constructor(&mut *store, bytes)
             .unwrap();
 
         let view = self

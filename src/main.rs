@@ -2,7 +2,8 @@ mod runtime;
 mod types;
 mod widget;
 
-use std::path::Path;
+use std::cell::OnceCell;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use iced::advanced::widget::{tree, Tree};
@@ -50,65 +51,60 @@ impl Counter {
     }
 }
 
-pub struct Thawing<'a, State, Message, Theme = iced::Theme, Renderer = iced::Renderer> {
+pub struct Thawing<'a, State, Message> {
     width: Length,
     height: Length,
-    state: std::marker::PhantomData<State>,
 
-    runtime: Arc<Mutex<runtime::State<'a, Theme, Renderer>>>,
-    element: Element<'a, runtime::Message, Theme, Renderer>,
+    path: PathBuf,
+    bytes: Arc<Vec<u8>>,
+    state: std::marker::PhantomData<State>,
+    tree: Mutex<OnceCell<Tree>>,
     on_reload: Box<dyn Fn() -> Message + 'a>,
 }
 
-impl<'a, State, Message, Theme, Renderer> Thawing<'a, State, Message, Theme, Renderer>
+impl<'a, State, Message> Thawing<'a, State, Message>
 where
     State: serde::Serialize,
-    Renderer: 'a + iced::advanced::Renderer + iced::advanced::text::Renderer,
-    Theme: 'a
-        + iced::widget::checkbox::Catalog
-        + iced::widget::button::Catalog
-        + iced::widget::text::Catalog,
-    <Theme as iced::widget::text::Catalog>::Class<'a>: From<iced::widget::text::StyleFn<'a, Theme>>,
 {
     pub fn from_file<'b>(
         path: impl AsRef<Path>,
         state: &'b State,
         on_reload: impl Fn() -> Message + 'a,
     ) -> Self {
-        let runtime = runtime::State::new(path.as_ref());
-        let element = runtime.view(state);
-
         Self {
+            path: path.as_ref().to_path_buf(),
+            bytes: Arc::new(bincode::serialize(state).unwrap()),
             width: Length::Shrink,
             height: Length::Shrink,
+            tree: Mutex::new(OnceCell::new()),
             state: std::marker::PhantomData,
-            runtime: Arc::new(Mutex::new(runtime)),
-            element,
             on_reload: Box::new(on_reload),
         }
     }
 }
 
-impl<'a, State, Message, Theme, Renderer> From<Thawing<'a, State, Message, Theme, Renderer>>
+impl<'a, State, Message, Theme, Renderer> From<Thawing<'a, State, Message>>
     for Element<'a, Message, Theme, Renderer>
 where
-    'a: 'static,
     State: serde::Serialize + 'static,
-    Message: 'a + serde::Serialize + serde::de::DeserializeOwned,
-    Renderer: 'a + iced::advanced::Renderer + iced::advanced::text::Renderer,
-    Theme: 'a
+    Message: 'static + serde::Serialize + serde::de::DeserializeOwned,
+    Renderer: 'static + iced::advanced::Renderer + iced::advanced::text::Renderer,
+    Theme: 'static
         + iced::widget::checkbox::Catalog
         + iced::widget::button::Catalog
         + iced::widget::text::Catalog,
-    <Theme as iced::widget::text::Catalog>::Class<'a>: From<iced::widget::text::StyleFn<'a, Theme>>,
+    <Theme as iced::widget::text::Catalog>::Class<'static>:
+        From<iced::widget::text::StyleFn<'static, Theme>>,
 {
-    fn from(widget: Thawing<'a, State, Message, Theme, Renderer>) -> Self {
+    fn from(widget: Thawing<'a, State, Message>) -> Self {
         Element::new(widget)
     }
 }
 
 struct Inner<Theme, Renderer> {
-    runtime: Arc<Mutex<runtime::State<'static, Theme, Renderer>>>,
+    bytes: Arc<Vec<u8>>,
+    runtime: runtime::State<'static, Theme, Renderer>,
+    element: Element<'static, runtime::Message, Theme, Renderer>,
 }
 
 impl<Theme, Renderer> Inner<Theme, Renderer>
@@ -121,26 +117,39 @@ where
     <Theme as iced::widget::text::Catalog>::Class<'static>:
         From<iced::widget::text::StyleFn<'static, Theme>>,
 {
-    fn new<State>(runtime: Arc<Mutex<runtime::State<'static, Theme, Renderer>>>) -> Self
-    where
-        State: serde::Serialize,
-    {
-        Self { runtime }
+    fn new(path: PathBuf, bytes: Arc<Vec<u8>>) -> Self {
+        let runtime = runtime::State::new(&path);
+        let element = runtime.view(&bytes);
+
+        Self {
+            bytes,
+            runtime,
+            element,
+        }
+    }
+
+    fn diff(&mut self, other: Arc<Vec<u8>>) {
+        if Arc::ptr_eq(&self.bytes, &other) {
+            return;
+        }
+
+        self.element = self.runtime.view(&other);
+        self.bytes = other;
     }
 }
 
 impl<'a, State, Message, Theme, Renderer> Widget<Message, Theme, Renderer>
-    for Thawing<'a, State, Message, Theme, Renderer>
+    for Thawing<'a, State, Message>
 where
-    'a: 'static,
     State: serde::Serialize + 'static,
     Message: serde::Serialize + serde::de::DeserializeOwned,
-    Renderer: 'a + iced::advanced::Renderer + iced::advanced::text::Renderer,
-    Theme: 'a
+    Renderer: 'static + iced::advanced::Renderer + iced::advanced::text::Renderer,
+    Theme: 'static
         + iced::widget::checkbox::Catalog
         + iced::widget::button::Catalog
         + iced::widget::text::Catalog,
-    <Theme as iced::widget::text::Catalog>::Class<'a>: From<iced::widget::text::StyleFn<'a, Theme>>,
+    <Theme as iced::widget::text::Catalog>::Class<'static>:
+        From<iced::widget::text::StyleFn<'static, Theme>>,
 {
     fn tag(&self) -> tree::Tag {
         struct Tag<T>(T);
@@ -149,16 +158,19 @@ where
     }
 
     fn state(&self) -> tree::State {
-        let state = Inner::new::<State>(Arc::clone(&self.runtime));
+        let state: Inner<Theme, Renderer> = Inner::new(self.path.clone(), Arc::clone(&self.bytes));
+        let _ = self.tree.lock().unwrap().set(Tree::new(&state.element));
         tree::State::new(state)
     }
 
-    fn children(&self) -> Vec<tree::Tree> {
-        vec![Tree::new(&self.element)]
+    fn children(&self) -> Vec<Tree> {
+        vec![self.tree.lock().unwrap().take().unwrap()]
     }
 
     fn diff(&self, tree: &mut Tree) {
-        tree.children[0].diff(&self.element);
+        let state = tree.state.downcast_mut::<Inner<Theme, Renderer>>();
+        state.diff(Arc::clone(&self.bytes));
+        state.element.as_widget().diff(&mut tree.children[0]);
     }
 
     fn size(&self) -> Size<Length> {
@@ -171,7 +183,10 @@ where
         renderer: &Renderer,
         limits: &layout::Limits,
     ) -> layout::Node {
-        self.element
+        let state = tree.state.downcast_ref::<Inner<Theme, Renderer>>();
+
+        state
+            .element
             .as_widget()
             .layout(&mut tree.children[0], renderer, limits)
     }
@@ -190,7 +205,9 @@ where
         let mut messages = vec![];
         let mut guest = Shell::new(&mut messages);
 
-        self.element.as_widget_mut().update(
+        let state = tree.state.downcast_mut::<Inner<Theme, Renderer>>();
+
+        state.element.as_widget_mut().update(
             &mut tree.children[0],
             event,
             layout,
@@ -201,12 +218,9 @@ where
             viewport,
         );
 
-        let state = tree.state.downcast_mut::<Inner<Theme, Renderer>>();
-        let runtime = Arc::clone(&state.runtime);
-
         shell.merge(guest, move |message| match message {
             runtime::Message::Thawing(_) => (self.on_reload)(),
-            runtime::Message::Guest(closure, data) => runtime.lock().unwrap().call(closure, data),
+            runtime::Message::Guest(closure, data) => state.runtime.call(closure, data),
         });
     }
 
@@ -218,7 +232,9 @@ where
         viewport: &iced::Rectangle,
         renderer: &Renderer,
     ) -> mouse::Interaction {
-        self.element.as_widget().mouse_interaction(
+        let state = tree.state.downcast_ref::<Inner<Theme, Renderer>>();
+
+        state.element.as_widget().mouse_interaction(
             &tree.children[0],
             layout,
             cursor,
@@ -237,7 +253,9 @@ where
         cursor: mouse::Cursor,
         viewport: &iced::Rectangle,
     ) {
-        self.element.as_widget().draw(
+        let state = tree.state.downcast_ref::<Inner<Theme, Renderer>>();
+
+        state.element.as_widget().draw(
             &tree.children[0],
             renderer,
             theme,
@@ -248,15 +266,5 @@ where
         );
     }
 
-    // fn overlay<'b>(
-    //     &'b mut self,
-    //     state: &'b mut Tree,
-    //     layout: Layout<'_>,
-    //     renderer: &Renderer,
-    //     translation: iced::Vector,
-    // ) -> Option<advanced::overlay::Element<'b, Message, Theme, Renderer>> {
-    //     self.element
-    //         .as_widget_mut()
-    //         .overlay(state, layout, renderer, translation)
-    // }
+    // TODO(derezzedex): implement Widget::overlay
 }
