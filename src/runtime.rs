@@ -37,7 +37,11 @@ wasmtime::component::bindgen!({
 pub struct Id(pub(crate) widget::Id);
 
 impl Id {
-    pub fn new() -> Self {
+    pub fn new(id: impl Into<std::borrow::Cow<'static, str>>) -> Self {
+        Self(widget::Id::new(id))
+    }
+
+    pub fn unique() -> Self {
         Self(widget::Id::unique())
     }
 }
@@ -48,7 +52,16 @@ impl From<Id> for widget::Id {
     }
 }
 
-pub fn watch<Message, Theme, Renderer>(id: Id, path: impl AsRef<Path>) -> Task<()>
+impl From<&'static str> for Id {
+    fn from(value: &'static str) -> Self {
+        Id::new(value)
+    }
+}
+
+pub fn watch<Message, Theme, Renderer>(
+    id: impl Into<Id> + Clone + Send + 'static,
+    path: impl AsRef<Path>,
+) -> Task<()>
 where
     Message: Send + 'static,
     Theme: Send + 'static,
@@ -61,7 +74,7 @@ where
 // is needed (e.g. moving the mouse, or focusing the window) to display changes;
 // this sends a message to the application, forcing a `Widget::update`
 pub fn watch_and_notify<Message, Theme, Renderer>(
-    id: Id,
+    id: impl Into<Id> + Clone + Send + 'static,
     path: impl AsRef<Path>,
     on_reload: Message,
 ) -> Task<Message>
@@ -73,9 +86,13 @@ where
     watch::<Message, Theme, Renderer>(id, path).map(move |_| on_reload.clone())
 }
 
-pub fn reload<Theme: Send + 'static, Renderer: Send + 'static>(id: Id) -> Task<()> {
+pub fn reload<Theme: Send + 'static, Renderer: Send + 'static>(
+    id: impl Into<Id> + Clone + Send + 'static,
+) -> Task<()> {
+    let id = id.into();
+
     struct Reload<Theme, Renderer> {
-        id: Id,
+        id: widget::Id,
         theme: PhantomData<Theme>,
         renderer: PhantomData<Renderer>,
     }
@@ -90,7 +107,7 @@ pub fn reload<Theme: Send + 'static, Renderer: Send + 'static>(id: Id) -> Task<(
             state: &mut dyn std::any::Any,
         ) {
             match id {
-                Some(id) if id == &self.id.0 => {
+                Some(id) if id == &self.id => {
                     if let Some(state) = state.downcast_mut::<crate::Inner<Theme, Renderer>>() {
                         state.runtime.reload();
                         state.invalidated = true;
@@ -115,7 +132,7 @@ pub fn reload<Theme: Send + 'static, Renderer: Send + 'static>(id: Id) -> Task<(
     }
 
     widget::operate(Reload {
-        id,
+        id: id.into(),
         theme: PhantomData::<Theme>,
         renderer: PhantomData::<Renderer>,
     })

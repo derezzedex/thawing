@@ -5,7 +5,7 @@ mod widget;
 use std::cell::OnceCell;
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, LazyLock, Mutex};
+use std::sync::{Arc, Mutex};
 
 use iced::advanced::widget::{tree, Tree};
 use iced::advanced::{self, layout, mouse, renderer, Layout, Shell, Widget};
@@ -18,11 +18,10 @@ fn main() -> iced::Result {
         .run_with(Counter::new)
 }
 
-pub const SRC_PATH: &'static str = "./example/src/lib.rs";
-pub const WASM_PATH: &'static str =
+const ID: &'static str = "thawing";
+const SRC_PATH: &'static str = "./example/src/lib.rs";
+const WASM_PATH: &'static str =
     "./example/target/wasm32-unknown-unknown/debug/thawing_example.wasm";
-
-static ID: LazyLock<runtime::Id> = LazyLock::new(|| runtime::Id::new());
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum Message {
@@ -44,7 +43,7 @@ impl Counter {
         (
             Self::default(),
             runtime::watch_and_notify::<Message, iced::Theme, iced::Renderer>(
-                ID.clone(),
+                ID,
                 SRC_PATH,
                 Message::Reload,
             ),
@@ -63,10 +62,7 @@ impl Counter {
     }
 
     fn view(&self) -> iced::Element<Message> {
-        Thawing::from_file(WASM_PATH)
-            .state(self)
-            .id(ID.clone())
-            .into()
+        Thawing::from_file(WASM_PATH).state(self).id(ID).into()
     }
 }
 
@@ -102,6 +98,7 @@ impl<'a, State, Message> Thawing<'a, Message, State> {
         self
     }
 }
+
 impl<'a, State, Message> Thawing<'a, Message, State>
 where
     State: serde::Serialize,
