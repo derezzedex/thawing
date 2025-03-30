@@ -63,11 +63,14 @@ impl Counter {
     }
 
     fn view(&self) -> iced::Element<Message> {
-        Thawing::from_file(WASM_PATH, self).id(ID.clone()).into()
+        Thawing::from_file(WASM_PATH)
+            .state(self)
+            .id(ID.clone())
+            .into()
     }
 }
 
-pub struct Thawing<'a, State, Message> {
+pub struct Thawing<'a, Message, State = ()> {
     id: Option<runtime::Id>,
     width: Length,
     height: Length,
@@ -80,15 +83,12 @@ pub struct Thawing<'a, State, Message> {
     message: PhantomData<Message>,
 }
 
-impl<'a, State, Message> Thawing<'a, State, Message>
-where
-    State: serde::Serialize,
-{
-    pub fn from_file<'b>(path: impl AsRef<Path>, state: &'b State) -> Self {
+impl<'a, State, Message> Thawing<'a, Message, State> {
+    pub fn from_file(path: impl AsRef<Path>) -> Self {
         Self {
             id: None,
             path: path.as_ref().to_path_buf(),
-            bytes: Arc::new(bincode::serialize(state).unwrap()),
+            bytes: Arc::new(Vec::new()),
             width: Length::Shrink,
             height: Length::Shrink,
             tree: Mutex::new(OnceCell::new()),
@@ -102,8 +102,17 @@ where
         self
     }
 }
+impl<'a, State, Message> Thawing<'a, Message, State>
+where
+    State: serde::Serialize,
+{
+    pub fn state<'b>(mut self, state: &'b State) -> Self {
+        self.bytes = Arc::new(bincode::serialize(state).unwrap());
+        self
+    }
+}
 
-impl<'a, State, Message, Theme, Renderer> From<Thawing<'a, State, Message>>
+impl<'a, State, Message, Theme, Renderer> From<Thawing<'a, Message, State>>
     for Element<'a, Message, Theme, Renderer>
 where
     State: serde::Serialize + 'static,
@@ -116,7 +125,7 @@ where
     <Theme as iced::widget::text::Catalog>::Class<'static>:
         From<iced::widget::text::StyleFn<'static, Theme>>,
 {
-    fn from(widget: Thawing<'a, State, Message>) -> Self {
+    fn from(widget: Thawing<'a, Message, State>) -> Self {
         Element::new(widget)
     }
 }
@@ -161,7 +170,7 @@ where
 }
 
 impl<'a, State, Message, Theme, Renderer> Widget<Message, Theme, Renderer>
-    for Thawing<'a, State, Message>
+    for Thawing<'a, Message, State>
 where
     State: serde::Serialize + 'static,
     Message: serde::Serialize + serde::de::DeserializeOwned,
