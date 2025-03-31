@@ -11,6 +11,7 @@ use iced::futures;
 use iced::futures::channel::mpsc::channel;
 use iced::futures::{SinkExt, Stream, StreamExt};
 use iced::{Element, Task};
+use iced_core::element;
 use notify_debouncer_mini::notify::RecursiveMode;
 use notify_debouncer_mini::{new_debouncer, DebouncedEventKind};
 use wasmtime::component::{Component, Linker, Resource, ResourceAny, ResourceTable};
@@ -344,7 +345,9 @@ where
         R: 'static,
         W: iced::advanced::Widget<Message, Theme, Renderer>,
     {
-        *self.get(element).downcast::<W>()
+        let widget = element::into_raw(self.get(element));
+
+        unsafe { *Box::from_raw(Box::into_raw(widget) as *mut W) }
     }
 
     pub fn insert<E, R>(&mut self, resource: Resource<R>, widget: E) -> Resource<R>
@@ -398,49 +401,52 @@ impl<'a, Theme, Renderer> core::types::HostClosure for Guest<'a, Theme, Renderer
 fn watch_file(path: &Path) -> impl Stream<Item = ()> {
     let path = path.canonicalize().expect("failed to canonicalize path");
 
-    iced::stream::channel(10, |mut output| async move {
-        let (mut tx, mut rx) = channel(1);
+    iced::stream::channel(
+        10,
+        |mut output: futures::channel::mpsc::Sender<()>| async move {
+            let (mut tx, mut rx) = channel(1);
 
-        let mut debouncer = new_debouncer(Duration::from_millis(500), move |res| {
-            futures::executor::block_on(async {
-                tx.send(res).await.expect("Failed to send debounce event");
-            })
-        })
-        .expect("Failed to create file watcher");
-
-        debouncer
-            .watcher()
-            .watch(&path, RecursiveMode::NonRecursive)
-            .expect("Failed to watch path");
-
-        tracing::info!("Watching {path:?}");
-
-        loop {
-            for _ in rx
-                .next()
-                .await
-                .map(Result::ok)
-                .flatten()
-                .into_iter()
-                .flat_map(|events| {
-                    events
-                        .into_iter()
-                        .filter(|event| event.kind == DebouncedEventKind::Any)
+            let mut debouncer = new_debouncer(Duration::from_millis(500), move |res| {
+                futures::executor::block_on(async {
+                    tx.send(res).await.expect("Failed to send debounce event");
                 })
-                .collect::<Vec<_>>()
-            {
-                tracing::info!("Building component...");
-                let timer = Instant::now();
-                Command::new("cargo")
-                    .args(["component", "build", "--target", "wasm32-unknown-unknown"])
-                    .current_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/example"))
-                    .stdin(Stdio::null())
-                    .output()
-                    .expect("Failed to build component");
-                tracing::info!("Component built in {:?}", timer.elapsed());
+            })
+            .expect("Failed to create file watcher");
 
-                output.send(()).await.expect("Failed to send message");
+            debouncer
+                .watcher()
+                .watch(&path, RecursiveMode::NonRecursive)
+                .expect("Failed to watch path");
+
+            tracing::info!("Watching {path:?}");
+
+            loop {
+                for _ in rx
+                    .next()
+                    .await
+                    .map(Result::ok)
+                    .flatten()
+                    .into_iter()
+                    .flat_map(|events| {
+                        events
+                            .into_iter()
+                            .filter(|event| event.kind == DebouncedEventKind::Any)
+                    })
+                    .collect::<Vec<_>>()
+                {
+                    tracing::info!("Building component...");
+                    let timer = Instant::now();
+                    Command::new("cargo")
+                        .args(["component", "build", "--target", "wasm32-unknown-unknown"])
+                        .current_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/example"))
+                        .stdin(Stdio::null())
+                        .output()
+                        .expect("Failed to build component");
+                    tracing::info!("Component built in {:?}", timer.elapsed());
+
+                    output.send(()).await.expect("Failed to send message");
+                }
             }
-        }
-    })
+        },
+    )
 }
