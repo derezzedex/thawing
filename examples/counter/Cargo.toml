@@ -1,0 +1,15 @@
+[package]
+name = "counter"
+version = "0.1.0"
+authors = ["Richard Custodio <richardcustodio@pm.me>"]
+edition = "2024"
+publish = false
+
+[dependencies]
+thawing.workspace = true
+iced.workspace = true
+tracing.workspace = true
+serde.workspace = true
+serde.features = ["derive"]
+
+tracing-subscriber = "0.3"

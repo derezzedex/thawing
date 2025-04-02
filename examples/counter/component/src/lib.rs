@@ -1,5 +1,5 @@
-use thawing::widget::{button, checkbox, column, text};
-use thawing::{Application, Center, Element};
+use thawing_guest::widget::{button, checkbox, column, text};
+use thawing_guest::{Application, Center, Element};
 
 #[derive(Debug, Clone, serde::Serialize)]
 enum Message {
@@ -28,4 +28,4 @@ impl Application for MyApp {
     }
 }
 
-thawing::thaw!(MyApp);
+thawing_guest::thaw!(MyApp);

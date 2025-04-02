@@ -2,17 +2,18 @@ use crate::runtime::{self, Guest, Message};
 use core::types::{Color, Horizontal, Length, Padding, Pixels};
 use runtime::thawing::core;
 
+use iced_core::text;
 use wasmtime::component::Resource;
 
-pub type Column<'a, Theme, Renderer> = iced::widget::Column<'a, Message, Theme, Renderer>;
-pub type Button<'a, Theme, Renderer> = iced::widget::Button<'a, Message, Theme, Renderer>;
-pub type Text<'a, Theme, Renderer> = iced::widget::Text<'a, Theme, Renderer>;
-pub type Checkbox<'a, Theme, Renderer> = iced::widget::Checkbox<'a, Message, Theme, Renderer>;
+pub type Column<'a, Theme, Renderer> = iced_widget::Column<'a, Message, Theme, Renderer>;
+pub type Button<'a, Theme, Renderer> = iced_widget::Button<'a, Message, Theme, Renderer>;
+pub type Text<'a, Theme, Renderer> = iced_widget::Text<'a, Theme, Renderer>;
+pub type Checkbox<'a, Theme, Renderer> = iced_widget::Checkbox<'a, Message, Theme, Renderer>;
 
 impl<'a, Theme, Renderer> core::widget::HostCheckbox for Guest<'a, Theme, Renderer>
 where
-    Renderer: 'a + iced::advanced::text::Renderer,
-    Theme: 'a + iced::widget::checkbox::Catalog,
+    Renderer: 'a + text::Renderer,
+    Theme: 'a + iced_widget::checkbox::Catalog,
 {
     fn new(&mut self, label: String, is_checked: bool) -> Resource<core::widget::Checkbox> {
         let checkbox = Checkbox::new(label, is_checked);
@@ -45,8 +46,8 @@ where
 
 impl<'a, Theme, Renderer> core::widget::HostButton for Guest<'a, Theme, Renderer>
 where
-    Renderer: 'a + iced::advanced::Renderer,
-    Theme: 'a + iced::widget::button::Catalog,
+    Renderer: 'a + iced_core::Renderer,
+    Theme: 'a + iced_widget::button::Catalog,
 {
     fn new(&mut self, content: Resource<core::widget::Element>) -> Resource<core::widget::Button> {
         let content = self.get(&content);
@@ -80,7 +81,7 @@ where
 
 impl<'a, Theme, Renderer> core::widget::HostColumn for Guest<'a, Theme, Renderer>
 where
-    Renderer: 'a + iced::advanced::Renderer,
+    Renderer: 'a + iced_core::Renderer,
     Theme: 'a,
 {
     fn new(&mut self) -> Resource<core::widget::Column> {
@@ -226,9 +227,9 @@ where
 
 impl<'a, Theme, Renderer> core::widget::HostText for Guest<'a, Theme, Renderer>
 where
-    Renderer: 'a + iced::advanced::text::Renderer,
-    Theme: 'a + iced::widget::text::Catalog,
-    Theme::Class<'a>: From<iced::widget::text::StyleFn<'a, Theme>>,
+    Renderer: 'a + text::Renderer,
+    Theme: 'a + iced_widget::text::Catalog,
+    Theme::Class<'a>: From<iced_widget::text::StyleFn<'a, Theme>>,
 {
     fn new(&mut self, fragment: String) -> Resource<core::widget::Text> {
         self.push(Text::new(fragment))

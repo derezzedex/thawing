@@ -1,19 +1,10 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
 use std::rc::Rc;
-use std::time::{Duration, Instant};
 
-use iced::advanced::widget;
-use iced::futures;
-use iced::futures::channel::mpsc::channel;
-use iced::futures::{SinkExt, Stream, StreamExt};
-use iced::{Element, Task};
-use iced_core::element;
-use notify_debouncer_mini::notify::RecursiveMode;
-use notify_debouncer_mini::{new_debouncer, DebouncedEventKind};
+use iced_core::widget;
+use iced_core::{Element, Widget, element, text};
 use wasmtime::component::{Component, Linker, Resource, ResourceAny, ResourceTable};
 use wasmtime::{Engine, Store};
 
@@ -33,111 +24,6 @@ wasmtime::component::bindgen!({
         "thawing:core/types/element": Empty,
     },
 });
-
-#[derive(Debug, Clone)]
-pub struct Id(pub(crate) widget::Id);
-
-impl Id {
-    pub fn new(id: impl Into<std::borrow::Cow<'static, str>>) -> Self {
-        Self(widget::Id::new(id))
-    }
-
-    pub fn unique() -> Self {
-        Self(widget::Id::unique())
-    }
-}
-
-impl From<Id> for widget::Id {
-    fn from(id: Id) -> Self {
-        id.0
-    }
-}
-
-impl From<&'static str> for Id {
-    fn from(value: &'static str) -> Self {
-        Id::new(value)
-    }
-}
-
-pub fn watch<Message, Theme, Renderer>(
-    id: impl Into<Id> + Clone + Send + 'static,
-    path: impl AsRef<Path>,
-) -> Task<()>
-where
-    Message: Send + 'static,
-    Theme: Send + 'static,
-    Renderer: Send + 'static,
-{
-    Task::stream(watch_file(path.as_ref())).then(move |_| reload::<Theme, Renderer>(id.clone()))
-}
-
-// TODO(derezzedex): if `watch` is used instead, a `Widget::update` call
-// is needed (e.g. moving the mouse, or focusing the window) to display changes;
-// this sends a message to the application, forcing a `Widget::update`
-pub fn watch_and_notify<Message, Theme, Renderer>(
-    id: impl Into<Id> + Clone + Send + 'static,
-    path: impl AsRef<Path>,
-    on_reload: Message,
-) -> Task<Message>
-where
-    Message: Clone + Send + 'static,
-    Theme: Send + 'static,
-    Renderer: Send + 'static,
-{
-    watch::<Message, Theme, Renderer>(id, path).map(move |_| on_reload.clone())
-}
-
-pub fn reload<Theme: Send + 'static, Renderer: Send + 'static>(
-    id: impl Into<Id> + Clone + Send + 'static,
-) -> Task<()> {
-    let id = id.into();
-
-    struct Reload<Theme, Renderer> {
-        id: widget::Id,
-        theme: PhantomData<Theme>,
-        renderer: PhantomData<Renderer>,
-    }
-
-    impl<Theme: Send + 'static, Renderer: Send + 'static> widget::Operation
-        for Reload<Theme, Renderer>
-    {
-        fn custom(
-            &mut self,
-            id: Option<&widget::Id>,
-            _bounds: iced::Rectangle,
-            state: &mut dyn std::any::Any,
-        ) {
-            match id {
-                Some(id) if id == &self.id => {
-                    if let Some(state) = state.downcast_mut::<crate::Inner<Theme, Renderer>>() {
-                        state.runtime.reload();
-                        state.invalidated = true;
-                    }
-                }
-                _ => {}
-            }
-        }
-
-        fn container(
-            &mut self,
-            _id: Option<&widget::Id>,
-            _bounds: iced::Rectangle,
-            operate_on_children: &mut dyn FnMut(&mut dyn widget::Operation<()>),
-        ) {
-            operate_on_children(self)
-        }
-
-        fn finish(&self) -> widget::operation::Outcome<()> {
-            widget::operation::Outcome::Some(())
-        }
-    }
-
-    widget::operate(Reload {
-        id: id.into(),
-        theme: PhantomData::<Theme>,
-        renderer: PhantomData::<Renderer>,
-    })
-}
 
 #[derive(Debug, Clone)]
 pub struct Message {
@@ -194,12 +80,12 @@ impl<'a, Theme, Renderer> State<'a, Theme, Renderer> {
 
 impl<'a, Theme, Renderer> State<'a, Theme, Renderer>
 where
-    Renderer: 'a + iced::advanced::Renderer + iced::advanced::text::Renderer,
+    Renderer: 'a + iced_core::Renderer + text::Renderer,
     Theme: 'a
-        + iced::widget::checkbox::Catalog
-        + iced::widget::button::Catalog
-        + iced::widget::text::Catalog,
-    <Theme as iced::widget::text::Catalog>::Class<'a>: From<iced::widget::text::StyleFn<'a, Theme>>,
+        + iced_widget::checkbox::Catalog
+        + iced_widget::button::Catalog
+        + iced_widget::text::Catalog,
+    <Theme as widget::text::Catalog>::Class<'a>: From<widget::text::StyleFn<'a, Theme>>,
 {
     pub fn new(path: impl AsRef<Path>) -> Self {
         let path = path.as_ref().to_path_buf();
@@ -268,7 +154,7 @@ where
             .unwrap()
     }
 
-    pub fn view(&self, bytes: &Vec<u8>) -> iced::Element<'a, Message, Theme, Renderer> {
+    pub fn view(&self, bytes: &Vec<u8>) -> Element<'a, Message, Theme, Renderer> {
         let mut store = self.store.borrow_mut();
         let mut table = self.table.borrow_mut();
         table.resource_drop(&mut *store).unwrap();
@@ -322,7 +208,7 @@ impl<'a, Theme, Renderer> Guest<'a, Theme, Renderer> {
 
 impl<'a, Theme, Renderer> Guest<'a, Theme, Renderer>
 where
-    Renderer: iced::advanced::Renderer,
+    Renderer: iced_core::Renderer,
 {
     pub fn push<W>(&mut self, widget: W) -> Resource<Empty>
     where
@@ -343,7 +229,7 @@ where
     pub fn get_widget<W, R>(&mut self, element: &Resource<R>) -> W
     where
         R: 'static,
-        W: iced::advanced::Widget<Message, Theme, Renderer>,
+        W: Widget<Message, Theme, Renderer>,
     {
         let widget = element::into_raw(self.get(element));
 
@@ -364,12 +250,12 @@ where
 // this forces users to have implemented `Catalog` in their `Theme` for every widget available
 impl<'a, Theme, Renderer> core::widget::Host for Guest<'a, Theme, Renderer>
 where
-    Renderer: 'a + iced::advanced::Renderer + iced::advanced::text::Renderer,
+    Renderer: 'a + iced_core::Renderer + text::Renderer,
     Theme: 'a
-        + iced::widget::checkbox::Catalog
-        + iced::widget::button::Catalog
-        + iced::widget::text::Catalog,
-    <Theme as iced::widget::text::Catalog>::Class<'a>: From<iced::widget::text::StyleFn<'a, Theme>>,
+        + iced_widget::checkbox::Catalog
+        + iced_widget::button::Catalog
+        + iced_widget::text::Catalog,
+    <Theme as widget::text::Catalog>::Class<'a>: From<widget::text::StyleFn<'a, Theme>>,
 {
 }
 
@@ -396,57 +282,4 @@ impl<'a, Theme, Renderer> core::types::HostClosure for Guest<'a, Theme, Renderer
 
         Ok(())
     }
-}
-
-fn watch_file(path: &Path) -> impl Stream<Item = ()> {
-    let path = path.canonicalize().expect("failed to canonicalize path");
-
-    iced::stream::channel(
-        10,
-        |mut output: futures::channel::mpsc::Sender<()>| async move {
-            let (mut tx, mut rx) = channel(1);
-
-            let mut debouncer = new_debouncer(Duration::from_millis(500), move |res| {
-                futures::executor::block_on(async {
-                    tx.send(res).await.expect("Failed to send debounce event");
-                })
-            })
-            .expect("Failed to create file watcher");
-
-            debouncer
-                .watcher()
-                .watch(&path, RecursiveMode::NonRecursive)
-                .expect("Failed to watch path");
-
-            tracing::info!("Watching {path:?}");
-
-            loop {
-                for _ in rx
-                    .next()
-                    .await
-                    .map(Result::ok)
-                    .flatten()
-                    .into_iter()
-                    .flat_map(|events| {
-                        events
-                            .into_iter()
-                            .filter(|event| event.kind == DebouncedEventKind::Any)
-                    })
-                    .collect::<Vec<_>>()
-                {
-                    tracing::info!("Building component...");
-                    let timer = Instant::now();
-                    Command::new("cargo")
-                        .args(["component", "build", "--target", "wasm32-unknown-unknown"])
-                        .current_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/example"))
-                        .stdin(Stdio::null())
-                        .output()
-                        .expect("Failed to build component");
-                    tracing::info!("Component built in {:?}", timer.elapsed());
-
-                    output.send(()).await.expect("Failed to send message");
-                }
-            }
-        },
-    )
 }

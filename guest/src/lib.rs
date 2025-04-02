@@ -99,9 +99,7 @@ macro_rules! color {
             a: $a,
         }
     }};
-    ($hex:expr) => {{
-        $crate::color!($hex, 1.0)
-    }};
+    ($hex:expr) => {{ $crate::color!($hex, 1.0) }};
     ($hex:expr, $a:expr) => {{
         let hex = $hex as u32;
 
