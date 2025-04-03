@@ -50,7 +50,8 @@ impl Message {
 }
 
 pub(crate) struct State<'a, Theme, Renderer> {
-    path: PathBuf,
+    pub(crate) manifest: PathBuf,
+    wasm: PathBuf,
     store: Rc<RefCell<Store<Guest<'a, Theme, Renderer>>>>,
     bindings: Rc<RefCell<Thawing>>,
     table: Rc<RefCell<ResourceAny>>,
@@ -61,8 +62,7 @@ pub(crate) struct State<'a, Theme, Renderer> {
 
 impl<'a, Theme, Renderer> State<'a, Theme, Renderer> {
     pub fn reload(&mut self) {
-        let component = Component::from_file(&self.engine, &self.path).unwrap();
-
+        let component = Component::from_file(&self.engine, &self.wasm).unwrap();
         let mut store = self.store.borrow_mut();
         let mut bindings = self.bindings.borrow_mut();
         *store = Store::new(&self.engine, Guest::new());
@@ -88,9 +88,32 @@ where
     <Theme as widget::text::Catalog>::Class<'a>: From<widget::text::StyleFn<'a, Theme>>,
 {
     pub fn new(path: impl AsRef<Path>) -> Self {
-        let path = path.as_ref().to_path_buf();
+        let manifest = path.as_ref().to_path_buf();
+        let wasm = std::fs::read_dir(
+            manifest
+                .join("target")
+                .join("wasm32-unknown-unknown")
+                .join("debug"),
+        )
+        .unwrap()
+        .filter_map(Result::ok)
+        .filter(|dir| {
+            dir.file_type()
+                .ok()
+                .map(|kind| kind.is_file())
+                .unwrap_or(false)
+        })
+        .find(|dir| {
+            dir.path()
+                .extension()
+                .map(|ext| ext == "wasm")
+                .unwrap_or(false)
+        })
+        .unwrap()
+        .path();
+
         let engine = Engine::default();
-        let component = Component::from_file(&engine, &path).unwrap();
+        let component = Component::from_file(&engine, &wasm).unwrap();
 
         let mut linker = Linker::new(&engine);
         Thawing::add_to_linker(&mut linker, |state| state).unwrap();
@@ -105,7 +128,8 @@ where
             .unwrap();
 
         Self {
-            path,
+            manifest,
+            wasm,
             store: Rc::new(RefCell::new(store)),
             bindings: Rc::new(RefCell::new(bindings)),
             table: Rc::new(RefCell::new(table)),

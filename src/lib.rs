@@ -292,6 +292,12 @@ impl Id {
     }
 }
 
+impl From<iced_core::widget::Id> for Id {
+    fn from(id: iced_core::widget::Id) -> Self {
+        Self(id)
+    }
+}
+
 impl From<Id> for iced_core::widget::Id {
     fn from(id: Id) -> Self {
         id.0
@@ -304,24 +310,15 @@ impl From<&'static str> for Id {
     }
 }
 
-pub fn watch<Message, Theme, Renderer>(
-    id: impl Into<Id> + Clone + Send + 'static,
-    path: impl AsRef<Path> + 'static,
-) -> Task<()>
-where
-    Message: Send + 'static,
-    Theme: Send + 'static,
-    Renderer: Send + 'static,
-{
-    Task::stream(watch_file(path.as_ref())).then(move |_| reload::<Theme, Renderer>(id.clone()))
+pub fn watch(path: impl AsRef<Path> + 'static) -> Task<()> {
+    Task::stream(watch_file(path.as_ref()))
 }
 
 // TODO(derezzedex): if `watch` is used instead, a `Widget::update` call
 // is needed (e.g. moving the mouse, or focusing the window) to display changes;
 // this sends a message to the application, forcing a `Widget::update`
-pub fn watch_and_notify<Message, Theme, Renderer>(
+pub fn watch_and_reload<Message, Theme, Renderer>(
     id: impl Into<Id> + Clone + Send + 'static,
-    path: impl AsRef<Path> + 'static,
     on_reload: Message,
 ) -> Task<Message>
 where
@@ -329,7 +326,65 @@ where
     Theme: Send + 'static,
     Renderer: Send + 'static,
 {
-    watch::<Message, Theme, Renderer>(id, path).map(move |_| on_reload.clone())
+    let id = id.into();
+
+    get_path::<Theme, Renderer>(id.clone())
+        .then(watch)
+        .then(move |_| reload::<Theme, Renderer>(id.clone()))
+        .map(move |_| on_reload.clone())
+}
+
+fn get_path<Theme: Send + 'static, Renderer: Send + 'static>(id: Id) -> Task<PathBuf> {
+    struct GetPath<Theme, Renderer> {
+        id: iced_core::widget::Id,
+        path: Option<PathBuf>,
+        theme: PhantomData<Theme>,
+        renderer: PhantomData<Renderer>,
+    }
+
+    impl<Theme: Send + 'static, Renderer: Send + 'static> Operation<PathBuf>
+        for GetPath<Theme, Renderer>
+    {
+        fn custom(
+            &mut self,
+            id: Option<&iced_core::widget::Id>,
+            _bounds: Rectangle,
+            state: &mut dyn std::any::Any,
+        ) {
+            match id {
+                Some(id) if id == &self.id => {
+                    if let Some(state) = state.downcast_mut::<crate::Inner<Theme, Renderer>>() {
+                        self.path = Some(state.runtime.manifest.clone());
+                        return;
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        fn container(
+            &mut self,
+            _id: Option<&iced_core::widget::Id>,
+            _bounds: Rectangle,
+            operate_on_children: &mut dyn FnMut(&mut dyn Operation<PathBuf>),
+        ) {
+            operate_on_children(self)
+        }
+
+        fn finish(&self) -> operation::Outcome<PathBuf> {
+            self.path
+                .clone()
+                .map(operation::Outcome::Some)
+                .unwrap_or(operation::Outcome::None)
+        }
+    }
+
+    task::widget(GetPath {
+        id: id.into(),
+        path: None,
+        theme: PhantomData::<Theme>,
+        renderer: PhantomData::<Renderer>,
+    })
 }
 
 pub fn reload<Theme: Send + 'static, Renderer: Send + 'static>(
@@ -355,6 +410,7 @@ pub fn reload<Theme: Send + 'static, Renderer: Send + 'static>(
                     if let Some(state) = state.downcast_mut::<crate::Inner<Theme, Renderer>>() {
                         state.runtime.reload();
                         state.invalidated = true;
+                        return;
                     }
                 }
                 _ => {}
@@ -383,7 +439,7 @@ pub fn reload<Theme: Send + 'static, Renderer: Send + 'static>(
 }
 
 fn watch_file(path: &Path) -> impl Stream<Item = ()> + use<> {
-    let path = path
+    let manifest = path
         .canonicalize()
         .expect(&format!("failed to canonicalize path: {path:?}"));
 
@@ -399,12 +455,13 @@ fn watch_file(path: &Path) -> impl Stream<Item = ()> + use<> {
             })
             .expect("Failed to create file watcher");
 
+            let src_path = manifest.join("src");
             debouncer
                 .watcher()
-                .watch(&path, RecursiveMode::NonRecursive)
+                .watch(&src_path, RecursiveMode::Recursive)
                 .expect("Failed to watch path");
 
-            tracing::info!("Watching {path:?}");
+            tracing::info!("Watching {src_path:?}");
 
             loop {
                 for _ in rx
@@ -424,8 +481,7 @@ fn watch_file(path: &Path) -> impl Stream<Item = ()> + use<> {
                     let timer = Instant::now();
                     Command::new("cargo")
                         .args(["component", "build", "--target", "wasm32-unknown-unknown"])
-                        // TODO(derezzedex): handle this properly
-                        .current_dir(path.parent().unwrap().parent().unwrap())
+                        .current_dir(&manifest)
                         .stdin(Stdio::null())
                         .output()
                         .expect("Failed to build component");

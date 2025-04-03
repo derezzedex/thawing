@@ -28,11 +28,7 @@ impl Counter {
     fn new() -> (Self, iced::Task<Message>) {
         (
             Self::default(),
-            thawing::watch_and_notify::<Message, iced::Theme, iced::Renderer>(
-                ID,
-                Path::new(env!("CARGO_MANIFEST_DIR")).join("component/src/lib.rs"),
-                Message::Reload,
-            ),
+            thawing::watch_and_reload::<Message, iced::Theme, iced::Renderer>(ID, Message::Reload),
         )
     }
 
@@ -48,12 +44,9 @@ impl Counter {
     }
 
     fn view(&self) -> iced::Element<Message> {
-        thawing::component(
-            Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("component/target/wasm32-unknown-unknown/debug/component.wasm"),
-        )
-        .state(self)
-        .id(ID)
-        .into()
+        thawing::component(Path::new(env!("CARGO_MANIFEST_DIR")).join("component"))
+            .state(self)
+            .id(ID)
+            .into()
     }
 }
