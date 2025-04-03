@@ -1,3 +1,5 @@
+use std::path::Path;
+
 fn main() -> iced::Result {
     tracing_subscriber::fmt::init();
 
@@ -6,11 +8,6 @@ fn main() -> iced::Result {
 }
 
 const ID: &'static str = "thawing";
-const SRC_PATH: &'static str = concat!(env!("CARGO_MANIFEST_DIR"), "/component/src/lib.rs");
-const WASM_PATH: &'static str = concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/component/target/wasm32-unknown-unknown/debug/component.wasm"
-);
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum Message {
@@ -33,7 +30,7 @@ impl Counter {
             Self::default(),
             thawing::watch_and_notify::<Message, iced::Theme, iced::Renderer>(
                 ID,
-                SRC_PATH,
+                Path::new(env!("CARGO_MANIFEST_DIR")).join("component/src/lib.rs"),
                 Message::Reload,
             ),
         )
@@ -51,6 +48,12 @@ impl Counter {
     }
 
     fn view(&self) -> iced::Element<Message> {
-        thawing::component(WASM_PATH).state(self).id(ID).into()
+        thawing::component(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("component/target/wasm32-unknown-unknown/debug/component.wasm"),
+        )
+        .state(self)
+        .id(ID)
+        .into()
     }
 }
