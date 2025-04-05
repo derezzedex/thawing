@@ -15,7 +15,7 @@ pub struct MyApp {
 }
 
 impl Application for MyApp {
-    fn view(&self) -> Element {
+    fn view(&self) -> impl Into<Element> {
         column![
             checkbox("click me!", self.is_toggled).on_toggle(Message::Toggled),
             button("Increment").on_press(Message::Increment),
@@ -24,7 +24,6 @@ impl Application for MyApp {
         ]
         .padding(20)
         .align_x(Center)
-        .into()
     }
 }
 

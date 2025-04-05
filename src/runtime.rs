@@ -49,9 +49,32 @@ impl Message {
     }
 }
 
+enum BinaryPath {
+    Temporary {
+        _temp_dir: tempfile::TempDir,
+        path: PathBuf,
+    },
+    UserProvided(PathBuf),
+}
+
+impl BinaryPath {
+    fn temporary(_temp_dir: tempfile::TempDir, path: PathBuf) -> Self {
+        Self::Temporary { _temp_dir, path }
+    }
+}
+
+impl AsRef<Path> for BinaryPath {
+    fn as_ref(&self) -> &Path {
+        match self {
+            BinaryPath::Temporary { path, .. } => path,
+            BinaryPath::UserProvided(path) => path,
+        }
+    }
+}
+
 pub(crate) struct State<'a, Theme, Renderer> {
     pub(crate) manifest: PathBuf,
-    wasm: PathBuf,
+    wasm: BinaryPath,
     store: Rc<RefCell<Store<Guest<'a, Theme, Renderer>>>>,
     bindings: Rc<RefCell<Thawing>>,
     table: Rc<RefCell<ResourceAny>>,
@@ -87,7 +110,41 @@ where
         + iced_widget::text::Catalog,
     <Theme as widget::text::Catalog>::Class<'a>: From<widget::text::StyleFn<'a, Theme>>,
 {
-    pub fn new(path: impl AsRef<Path>) -> Self {
+    pub fn from_view(temp_dir: tempfile::TempDir) -> Self {
+        let manifest = temp_dir.path().join("component");
+        let wasm = manifest
+            .join("target")
+            .join("wasm32-unknown-unknown")
+            .join("debug")
+            .join("component.wasm");
+
+        let engine = Engine::default();
+        let component = Component::from_file(&engine, &wasm).unwrap();
+
+        let mut linker = Linker::new(&engine);
+        Thawing::add_to_linker(&mut linker, |state| state).unwrap();
+
+        let mut store = Store::new(&engine, Guest::new());
+        let bindings = Thawing::instantiate(&mut store, &component, &linker).unwrap();
+
+        let table = bindings
+            .thawing_core_guest()
+            .table()
+            .call_constructor(&mut store)
+            .unwrap();
+
+        Self {
+            manifest,
+            wasm: BinaryPath::temporary(temp_dir, wasm),
+            store: Rc::new(RefCell::new(store)),
+            bindings: Rc::new(RefCell::new(bindings)),
+            table: Rc::new(RefCell::new(table)),
+            engine,
+            linker,
+        }
+    }
+
+    pub fn from_component(path: impl AsRef<Path>) -> Self {
         let manifest = path.as_ref().to_path_buf();
         let wasm = std::fs::read_dir(
             manifest
@@ -129,7 +186,7 @@ where
 
         Self {
             manifest,
-            wasm,
+            wasm: BinaryPath::UserProvided(wasm),
             store: Rc::new(RefCell::new(store)),
             bindings: Rc::new(RefCell::new(bindings)),
             table: Rc::new(RefCell::new(table)),

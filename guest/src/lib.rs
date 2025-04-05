@@ -42,7 +42,7 @@ macro_rules! thaw {
             }
 
             fn view(&self) -> guest::Element {
-                <Self as $crate::Application>::view(self)
+                <Self as $crate::Application>::view(self).into()
             }
         }
 
@@ -56,7 +56,7 @@ macro_rules! thaw {
 }
 
 pub trait Application {
-    fn view(&self) -> Element;
+    fn view(&self) -> impl Into<Element>;
 }
 
 pub mod runtime;

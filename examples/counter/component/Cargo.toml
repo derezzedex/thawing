@@ -6,7 +6,7 @@ edition = "2024"
 [workspace]
 
 [dependencies]
-thawing_guest = { path = "../../../guest" }
+thawing_guest = { git = "ssh://github.com/derezzedex/thawing", branch = "dev/widget-api" }
 serde = { version = "1.0", features = ["derive"]}
 
 [lib]
@@ -20,5 +20,5 @@ strip = true
 lto = true
 
 [package.metadata.component]
-package = "thawing:app"
+package = "thawing:component"
 dependencies = {}

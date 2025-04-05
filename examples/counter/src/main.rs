@@ -1,4 +1,5 @@
-use std::path::Path;
+use iced::widget::{button, checkbox, column, text};
+use iced::{Center, Element};
 
 fn main() -> iced::Result {
     tracing_subscriber::fmt::init();
@@ -11,18 +12,21 @@ const ID: &'static str = "thawing";
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum Message {
-    #[serde(skip)]
     Reload,
     Toggled(bool),
     Increment,
     Decrement,
 }
 
-#[derive(Default, serde::Serialize)]
+impl thawing::Message for Message {}
+
+#[derive(Default, serde::Serialize, serde::Deserialize)]
 struct Counter {
     value: i64,
     is_checked: bool,
 }
+
+impl thawing::State for Counter {}
 
 impl Counter {
     fn new() -> (Self, iced::Task<Message>) {
@@ -43,10 +47,19 @@ impl Counter {
         }
     }
 
-    fn view(&self) -> iced::Element<Message> {
-        thawing::component(Path::new(env!("CARGO_MANIFEST_DIR")).join("component"))
-            .state(self)
-            .id(ID)
-            .into()
+    fn view(&self) -> Element<Message> {
+        thawing::view![
+            column![
+                checkbox("click mes!", self.is_checked).on_toggle(Message::Toggled),
+                button("Increment").on_press(Message::Increment),
+                text(self.value).size(50),
+                button("Decrement").on_press(Message::Decrement)
+            ]
+            .padding(20)
+            .align_x(Center)
+        ]
+        .state(self)
+        .id(ID)
+        .into()
     }
 }
