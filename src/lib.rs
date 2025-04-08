@@ -433,12 +433,8 @@ impl From<&'static str> for Id {
     }
 }
 
-pub fn watcher<Message, Theme, Renderer>(
-    id: impl Into<Id> + Clone + Send + 'static,
-    on_reload: Message,
-) -> Task<Message>
+pub fn watcher<Theme, Renderer>(id: impl Into<Id> + Clone + Send + 'static) -> Task<()>
 where
-    Message: 'static + Send + Clone,
     Renderer: 'static + Send + iced_core::Renderer + text::Renderer,
     Theme: 'static
         + Send
@@ -450,39 +446,37 @@ where
 {
     let id = id.into();
 
-    fetch_widget_kind::<Theme, Renderer>(id.clone())
-        .then(move |kind| {
-            let id = id.clone();
+    fetch_widget_kind::<Theme, Renderer>(id.clone()).then(move |kind| {
+        let id = id.clone();
 
-            match kind {
-                Kind::ComponentFile(manifest) => reload::<Theme, Renderer>(id.clone()).chain(
-                    Task::stream(watch_file(manifest.clone())).then(move |_| {
-                        build(manifest.clone()).chain(reload::<Theme, Renderer>(id.clone()))
-                    }),
-                ),
-                Kind::ViewMacro(caller) => {
-                    let temp_dir = tempfile::tempdir().unwrap();
-                    let manifest = temp_dir.path().join("component");
+        match kind {
+            Kind::ComponentFile(manifest) => reload::<Theme, Renderer>(id.clone()).chain(
+                Task::stream(watch_file(manifest.clone())).then(move |_| {
+                    build(manifest.clone()).chain(reload::<Theme, Renderer>(id.clone()))
+                }),
+            ),
+            Kind::ViewMacro(caller) => {
+                let temp_dir = tempfile::tempdir().unwrap();
+                let manifest = temp_dir.path().join("component");
 
-                    init_directory(&manifest)
-                        .chain(
-                            parse_and_write(&caller, &manifest).chain(
-                                build(&manifest)
-                                    .chain(create_runtime::<Theme, Renderer>(id.clone(), temp_dir)),
-                            ),
-                        )
-                        .chain(Task::stream(watch_file(caller.clone())).then(move |_| {
-                            let manifest = manifest.clone();
-                            let id = id.clone();
+                init_directory(&manifest)
+                    .chain(
+                        parse_and_write(&caller, &manifest).chain(
+                            build(&manifest)
+                                .chain(create_runtime::<Theme, Renderer>(id.clone(), temp_dir)),
+                        ),
+                    )
+                    .chain(Task::stream(watch_file(caller.clone())).then(move |_| {
+                        let manifest = manifest.clone();
+                        let id = id.clone();
 
-                            parse_and_write(&caller, &manifest)
-                                .then(move |_| build(manifest.clone()))
-                                .then(move |_| reload::<Theme, Renderer>(id.clone()))
-                        }))
-                }
+                        parse_and_write(&caller, &manifest)
+                            .then(move |_| build(manifest.clone()))
+                            .then(move |_| reload::<Theme, Renderer>(id.clone()))
+                    }))
             }
-        })
-        .then(move |_| Task::done(on_reload.clone()))
+        }
+    })
 }
 
 fn fetch_widget_kind<Theme: Send + 'static, Renderer: Send + 'static>(id: Id) -> Task<Kind> {

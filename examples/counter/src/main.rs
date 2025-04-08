@@ -12,7 +12,7 @@ const ID: &'static str = "thawing";
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum Message {
-    Reload,
+    Reloaded,
     Toggled(bool),
     Increment,
     Decrement,
@@ -32,13 +32,13 @@ impl Counter {
     fn new() -> (Self, iced::Task<Message>) {
         (
             Self::default(),
-            thawing::watcher::<Message, iced::Theme, iced::Renderer>(ID, Message::Reload),
+            thawing::watcher::<iced::Theme, iced::Renderer>(ID).map(|_| Message::Reloaded),
         )
     }
 
     fn update(&mut self, message: Message) {
         match message {
-            Message::Reload => {
+            Message::Reloaded => {
                 tracing::info!("Reloaded!");
             }
             Message::Toggled(is_checked) => self.is_checked = is_checked,
