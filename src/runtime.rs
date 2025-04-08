@@ -73,7 +73,6 @@ impl AsRef<Path> for BinaryPath {
 }
 
 pub(crate) struct State<'a, Theme, Renderer> {
-    pub(crate) manifest: PathBuf,
     wasm: BinaryPath,
     store: Rc<RefCell<Store<Guest<'a, Theme, Renderer>>>>,
     bindings: Rc<RefCell<Thawing>>,
@@ -134,7 +133,6 @@ where
             .unwrap();
 
         Self {
-            manifest,
             wasm: BinaryPath::temporary(temp_dir, wasm),
             store: Rc::new(RefCell::new(store)),
             bindings: Rc::new(RefCell::new(bindings)),
@@ -185,7 +183,6 @@ where
             .unwrap();
 
         Self {
-            manifest,
             wasm: BinaryPath::UserProvided(wasm),
             store: Rc::new(RefCell::new(store)),
             bindings: Rc::new(RefCell::new(bindings)),

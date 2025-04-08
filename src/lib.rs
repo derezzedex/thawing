@@ -3,12 +3,11 @@ mod types;
 mod widget;
 
 use std::cell::OnceCell;
-use std::io::Write;
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use iced_core::widget::{Operation, Tree, operation, tree};
 use iced_core::{Clipboard, Event, Layout, Length, Rectangle, Shell, Size, Widget};
@@ -131,9 +130,7 @@ where
 }
 
 enum Runtime<Theme, Renderer> {
-    None {
-        temp_dir: Option<tempfile::TempDir>,
-    },
+    None,
     Built {
         runtime: runtime::State<'static, Theme, Renderer>,
         element: Element<'static, runtime::Message, Theme, Renderer>,
@@ -165,7 +162,7 @@ where
 
                 Runtime::Built { runtime, element }
             }
-            Kind::ViewMacro(_) => Runtime::None { temp_dir: None },
+            Kind::ViewMacro(_) => Runtime::None,
         };
 
         Self {
@@ -228,7 +225,7 @@ where
         state.diff(&self.bytes);
 
         match &state.runtime {
-            Runtime::None { .. } => self
+            Runtime::None => self
                 .initial
                 .as_ref()
                 .unwrap()
@@ -251,7 +248,7 @@ where
         let state = tree.state.downcast_ref::<Inner<Theme, Renderer>>();
 
         match &state.runtime {
-            Runtime::None { .. } => self.initial.as_ref().unwrap().as_widget().layout(
+            Runtime::None => self.initial.as_ref().unwrap().as_widget().layout(
                 &mut tree.children[0],
                 renderer,
                 limits,
@@ -276,7 +273,7 @@ where
 
         operation.custom(id, layout.bounds(), state);
         operation.container(id, layout.bounds(), &mut |operation| match &state.runtime {
-            Runtime::None { .. } => self.initial.as_ref().unwrap().as_widget().operate(
+            Runtime::None => self.initial.as_ref().unwrap().as_widget().operate(
                 &mut tree.children[0],
                 layout,
                 renderer,
@@ -308,21 +305,8 @@ where
             state.invalidated = false;
         }
 
-        if let Runtime::None { temp_dir } = &mut state.runtime {
-            if let Some(temp_dir) = temp_dir.take() {
-                let timer = std::time::Instant::now();
-                let runtime = runtime::State::from_view(temp_dir);
-                let element = runtime.view(&state.bytes);
-                state.runtime = Runtime::Built { runtime, element };
-                tracing::info!(
-                    "Building `runtime::State::from_view` took {:?}",
-                    timer.elapsed()
-                );
-            }
-        }
-
         match &mut state.runtime {
-            Runtime::None { .. } => self.initial.as_mut().unwrap().as_widget_mut().update(
+            Runtime::None => self.initial.as_mut().unwrap().as_widget_mut().update(
                 &mut tree.children[0],
                 event,
                 layout,
@@ -365,7 +349,7 @@ where
         let state = tree.state.downcast_ref::<Inner<Theme, Renderer>>();
 
         match &state.runtime {
-            Runtime::None { .. } => self
+            Runtime::None => self
                 .initial
                 .as_ref()
                 .unwrap()
@@ -394,7 +378,7 @@ where
         let state = tree.state.downcast_ref::<Inner<Theme, Renderer>>();
 
         match &state.runtime {
-            Runtime::None { .. } => self.initial.as_ref().unwrap().as_widget().draw(
+            Runtime::None => self.initial.as_ref().unwrap().as_widget().draw(
                 &tree.children[0],
                 renderer,
                 theme,
@@ -449,44 +433,67 @@ impl From<&'static str> for Id {
     }
 }
 
-pub fn watch(path: impl AsRef<Path> + 'static) -> Task<()> {
-    Task::stream(watch_file(path.as_ref().to_path_buf()))
-}
-
-// TODO(derezzedex): if `watch` is used instead, a `Widget::update` call
-// is needed (e.g. moving the mouse, or focusing the window) to display changes;
-// this sends a message to the application, forcing a `Widget::update`
-pub fn watch_and_reload<Message, Theme, Renderer>(
+pub fn watcher<Message, Theme, Renderer>(
     id: impl Into<Id> + Clone + Send + 'static,
     on_reload: Message,
 ) -> Task<Message>
 where
-    Message: Clone + Send + 'static,
-    Theme: Send + 'static,
-    Renderer: Send + 'static,
+    Message: 'static + Send + Clone,
+    Renderer: 'static + Send + iced_core::Renderer + text::Renderer,
+    Theme: 'static
+        + Send
+        + iced_widget::checkbox::Catalog
+        + iced_widget::button::Catalog
+        + iced_widget::text::Catalog,
+    <Theme as iced_widget::text::Catalog>::Class<'static>:
+        From<iced_widget::text::StyleFn<'static, Theme>>,
 {
     let id = id.into();
 
-    get_path::<Theme, Renderer>(id.clone())
-        .then(move |(id, path)| {
-            reload::<Theme, Renderer>(id).then(move |_| Task::done(path.clone()))
+    fetch_widget_kind::<Theme, Renderer>(id.clone())
+        .then(move |kind| {
+            let id = id.clone();
+
+            match kind {
+                Kind::ComponentFile(manifest) => reload::<Theme, Renderer>(id.clone()).chain(
+                    Task::stream(watch_file(manifest.clone())).then(move |_| {
+                        build(manifest.clone()).chain(reload::<Theme, Renderer>(id.clone()))
+                    }),
+                ),
+                Kind::ViewMacro(caller) => {
+                    let temp_dir = tempfile::tempdir().unwrap();
+                    let manifest = temp_dir.path().join("component");
+
+                    init_directory(&manifest)
+                        .chain(
+                            parse_and_write(&caller, &manifest).chain(
+                                build(&manifest)
+                                    .chain(create_runtime::<Theme, Renderer>(id.clone(), temp_dir)),
+                            ),
+                        )
+                        .chain(Task::stream(watch_file(caller.clone())).then(move |_| {
+                            let manifest = manifest.clone();
+                            let id = id.clone();
+
+                            parse_and_write(&caller, &manifest)
+                                .then(move |_| build(manifest.clone()))
+                                .then(move |_| reload::<Theme, Renderer>(id.clone()))
+                        }))
+                }
+            }
         })
-        .then(watch)
-        .then(move |_| reload::<Theme, Renderer>(id.clone()))
-        .map(move |_| on_reload.clone())
+        .then(move |_| Task::done(on_reload.clone()))
 }
 
-fn get_path<Theme: Send + 'static, Renderer: Send + 'static>(id: Id) -> Task<(Id, PathBuf)> {
+fn fetch_widget_kind<Theme: Send + 'static, Renderer: Send + 'static>(id: Id) -> Task<Kind> {
     struct GetPath<Theme, Renderer> {
         id: iced_core::widget::Id,
-        path: Option<PathBuf>,
+        kind: Option<Kind>,
         theme: PhantomData<Theme>,
         renderer: PhantomData<Renderer>,
     }
 
-    impl<Theme: Send + 'static, Renderer: Send + 'static> Operation<(Id, PathBuf)>
-        for GetPath<Theme, Renderer>
-    {
+    impl<Theme: Send + 'static, Renderer: Send + 'static> Operation<Kind> for GetPath<Theme, Renderer> {
         fn custom(
             &mut self,
             id: Option<&iced_core::widget::Id>,
@@ -496,11 +503,7 @@ fn get_path<Theme: Send + 'static, Renderer: Send + 'static>(id: Id) -> Task<(Id
             match id {
                 Some(id) if id == &self.id => {
                     if let Some(state) = state.downcast_mut::<crate::Inner<Theme, Renderer>>() {
-                        let path = match &state.kind {
-                            Kind::ComponentFile(path) => path.join("src"),
-                            Kind::ViewMacro(path) => path.clone(),
-                        };
-                        self.path = Some(path);
+                        self.kind = Some(state.kind.clone());
                         return;
                     }
                 }
@@ -512,22 +515,238 @@ fn get_path<Theme: Send + 'static, Renderer: Send + 'static>(id: Id) -> Task<(Id
             &mut self,
             _id: Option<&iced_core::widget::Id>,
             _bounds: Rectangle,
-            operate_on_children: &mut dyn FnMut(&mut dyn Operation<(Id, PathBuf)>),
+            operate_on_children: &mut dyn FnMut(&mut dyn Operation<Kind>),
         ) {
             operate_on_children(self)
         }
 
-        fn finish(&self) -> operation::Outcome<(Id, PathBuf)> {
-            self.path
-                .as_ref()
-                .map(|path| operation::Outcome::Some((self.id.clone().into(), path.clone())))
+        fn finish(&self) -> operation::Outcome<Kind> {
+            self.kind
+                .clone()
+                .map(operation::Outcome::Some)
                 .unwrap_or(operation::Outcome::None)
         }
     }
 
     task::widget(GetPath {
         id: id.into(),
-        path: None,
+        kind: None,
+        theme: PhantomData::<Theme>,
+        renderer: PhantomData::<Renderer>,
+    })
+}
+
+fn init_directory(path: impl AsRef<Path>) -> Task<()> {
+    use tokio::fs;
+    use tokio::io::AsyncWriteExt;
+
+    let manifest = path.as_ref().to_path_buf();
+
+    Task::future(async move {
+        let timer = std::time::Instant::now();
+        fs::create_dir(&manifest).await.unwrap();
+
+        let src_path = manifest.join("src");
+        fs::create_dir(&src_path).await.unwrap();
+
+        let target_path = manifest.join("target");
+        fs::create_dir(&target_path).await.unwrap();
+
+        fs::File::create(src_path.join("lib.rs")).await.unwrap();
+
+        let mut toml_file = fs::File::create(manifest.join("Cargo.toml")).await.unwrap();
+        toml_file
+            .write_all(COMPONENT_TOML.as_bytes())
+            .await
+            .unwrap();
+
+        let mut gitignore_file = fs::File::create(manifest.join(".gitignore")).await.unwrap();
+        gitignore_file
+            .write_all(COMPONENT_GITIGNORE.as_bytes())
+            .await
+            .unwrap();
+
+        tracing::info!("Creating `component` tempdir took {:?}", timer.elapsed());
+    })
+}
+
+fn parse_and_write(caller: impl AsRef<Path>, manifest: impl AsRef<Path>) -> Task<()> {
+    use tokio::io::AsyncWriteExt;
+    use tokio::sync::oneshot;
+    use tokio::{fs, task};
+
+    let caller = caller.as_ref().to_path_buf();
+    let target = manifest.as_ref().join("src").join("lib.rs");
+
+    let (tx, rx) = oneshot::channel::<(PathBuf, PathBuf)>();
+
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_io()
+        .build()
+        .unwrap();
+
+    std::thread::spawn(move || {
+        let local = task::LocalSet::new();
+        local.spawn_local(async {
+            if let Ok((caller, target)) = rx.await {
+                let timer = std::time::Instant::now();
+                task::spawn_local(async move {
+                    let content = fs::read_to_string(caller).await.unwrap();
+                    let caller = syn::parse_file(&content).unwrap();
+                    let View {
+                        message,
+                        state,
+                        state_ty,
+                        view,
+                        ..
+                    } = ViewBuilder::from_file(&caller).build();
+
+                    let output = quote! {
+                        use thawing_guest::widget::{button, checkbox, column, text};
+                        use thawing_guest::{Application, Center, Element};
+
+                        #message
+
+                        #state
+
+                        impl Application for #state_ty {
+                            fn view(&self) -> impl Into<Element> {
+                                #view
+                            }
+                        }
+
+                        thawing_guest::thaw!(#state_ty);
+                    };
+
+                    let content =
+                        prettyplease::unparse(&syn::parse_file(&output.to_string()).unwrap());
+                    tracing::warn!("Writing:\n{content}");
+                    let mut lib_file = fs::File::options().write(true).open(target).await.unwrap();
+                    lib_file.write_all(content.as_bytes()).await.unwrap();
+                })
+                .await
+                .unwrap();
+                tracing::info!(
+                    "Parsing and writing to `component` took {:?}",
+                    timer.elapsed()
+                );
+            }
+        });
+
+        rt.block_on(local);
+    });
+
+    Task::future(async move {
+        tx.send((caller, target)).unwrap();
+    })
+}
+
+fn build(manifest: impl AsRef<Path>) -> Task<()> {
+    use tokio::process::Command;
+
+    let manifest = manifest.as_ref().to_path_buf();
+
+    Task::future(async move {
+        let timer = std::time::Instant::now();
+        let status = Command::new("cargo")
+            .args([
+                "component",
+                "build",
+                "--target",
+                "wasm32-unknown-unknown",
+                "--target-dir",
+                "target",
+            ])
+            .current_dir(&manifest)
+            .stdin(Stdio::null())
+            .spawn()
+            .expect("Failed to spawn compile command")
+            .wait()
+            .await
+            .unwrap();
+
+        tracing::info!(
+            "`cargo component` finished with {status:?} in {:?}",
+            timer.elapsed()
+        );
+    })
+}
+
+pub fn create_runtime<Theme, Renderer>(
+    id: impl Into<Id> + Clone + Send + 'static,
+    temp_dir: tempfile::TempDir,
+) -> Task<()>
+where
+    Renderer: 'static + Send + iced_core::Renderer + text::Renderer,
+    Theme: 'static
+        + Send
+        + iced_widget::checkbox::Catalog
+        + iced_widget::button::Catalog
+        + iced_widget::text::Catalog,
+    <Theme as iced_widget::text::Catalog>::Class<'static>:
+        From<iced_widget::text::StyleFn<'static, Theme>>,
+{
+    let id = id.into();
+
+    struct Reload<Theme, Renderer> {
+        id: iced_core::widget::Id,
+        temp_dir: Option<tempfile::TempDir>,
+        theme: PhantomData<Theme>,
+        renderer: PhantomData<Renderer>,
+    }
+
+    impl<Theme, Renderer> Operation for Reload<Theme, Renderer>
+    where
+        Renderer: 'static + Send + iced_core::Renderer + text::Renderer,
+        Theme: 'static
+            + Send
+            + iced_widget::checkbox::Catalog
+            + iced_widget::button::Catalog
+            + iced_widget::text::Catalog,
+        <Theme as iced_widget::text::Catalog>::Class<'static>:
+            From<iced_widget::text::StyleFn<'static, Theme>>,
+    {
+        fn custom(
+            &mut self,
+            id: Option<&iced_core::widget::Id>,
+            _bounds: Rectangle,
+            state: &mut dyn std::any::Any,
+        ) {
+            match id {
+                Some(id) if id == &self.id => {
+                    if let Some(state) = state.downcast_mut::<crate::Inner<Theme, Renderer>>() {
+                        if let Runtime::None = &mut state.runtime {
+                            let timer = std::time::Instant::now();
+                            let runtime = runtime::State::from_view(self.temp_dir.take().unwrap());
+                            let element = runtime.view(&state.bytes);
+                            state.runtime = Runtime::Built { runtime, element };
+                            state.invalidated = true;
+                            tracing::info!("Building `runtime::State` took {:?}", timer.elapsed());
+                        }
+                    }
+                    return;
+                }
+                _ => {}
+            }
+        }
+
+        fn container(
+            &mut self,
+            _id: Option<&iced_core::widget::Id>,
+            _bounds: Rectangle,
+            operate_on_children: &mut dyn FnMut(&mut dyn Operation<()>),
+        ) {
+            operate_on_children(self)
+        }
+
+        fn finish(&self) -> operation::Outcome<()> {
+            operation::Outcome::Some(())
+        }
+    }
+
+    task::widget(Reload {
+        id: id.into(),
+        temp_dir: Some(temp_dir),
         theme: PhantomData::<Theme>,
         renderer: PhantomData::<Renderer>,
     })
@@ -555,107 +774,14 @@ pub fn reload<Theme: Send + 'static, Renderer: Send + 'static>(
                 Some(id) if id == &self.id => {
                     if let Some(state) = state.downcast_mut::<crate::Inner<Theme, Renderer>>() {
                         let timer = std::time::Instant::now();
-                        if let Kind::ViewMacro(caller) = &state.kind {
-                            let manifest = match &mut state.runtime {
-                                Runtime::None { temp_dir } => {
-                                    let timer = std::time::Instant::now();
-                                    let tmp = tempfile::tempdir().unwrap();
-                                    let manifest = tmp.path().join("component");
-
-                                    std::fs::create_dir(&manifest).unwrap();
-
-                                    let src_path = manifest.join("src");
-                                    std::fs::create_dir(&src_path).unwrap();
-
-                                    let target_path = manifest.join("target");
-                                    std::fs::create_dir(&target_path).unwrap();
-
-                                    std::fs::File::create(src_path.join("lib.rs")).unwrap();
-
-                                    let mut toml_file =
-                                        std::fs::File::create(manifest.join("Cargo.toml")).unwrap();
-                                    toml_file.write_all(COMPONENT_TOML.as_bytes()).unwrap();
-
-                                    let mut gitignore_file =
-                                        std::fs::File::create(manifest.join(".gitignore")).unwrap();
-                                    gitignore_file
-                                        .write_all(COMPONENT_GITIGNORE.as_bytes())
-                                        .unwrap();
-
-                                    *temp_dir = Some(tmp);
-                                    tracing::info!(
-                                        "Created temporary `component` directory in {:?}",
-                                        timer.elapsed()
-                                    );
-
-                                    manifest
-                                }
-                                Runtime::Built { runtime, .. } => runtime.manifest.clone(),
-                            };
-
-                            let content = std::fs::read_to_string(caller).unwrap();
-                            let caller = syn::parse_file(&content).unwrap();
-
-                            let View {
-                                message,
-                                state,
-                                state_ty,
-                                view,
-                                ..
-                            } = ViewBuilder::from_file(&caller).build();
-
-                            let output = quote! {
-                                use thawing_guest::widget::{button, checkbox, column, text};
-                                use thawing_guest::{Application, Center, Element};
-
-                                #message
-
-                                #state
-
-                                impl Application for #state_ty {
-                                    fn view(&self) -> impl Into<Element> {
-                                        #view
-                                    }
-                                }
-
-                                thawing_guest::thaw!(#state_ty);
-                            };
-
-                            let lib_content = prettyplease::unparse(
-                                &syn::parse_file(&output.to_string()).unwrap(),
-                            );
-                            let mut lib_file = std::fs::File::options()
-                                .write(true)
-                                .open(manifest.join("src").join("lib.rs"))
-                                .unwrap();
-                            lib_file.write_all(lib_content.as_bytes()).unwrap();
-
-                            tracing::info!("Building component...");
-                            let timer = Instant::now();
-                            Command::new("cargo")
-                                .args([
-                                    "component",
-                                    "build",
-                                    "--target",
-                                    "wasm32-unknown-unknown",
-                                    "--target-dir",
-                                    "target",
-                                ])
-                                .current_dir(&manifest)
-                                .stdin(Stdio::null())
-                                .output()
-                                .expect("Failed to build component");
-                            tracing::info!("Component built in {:?}", timer.elapsed());
-                        }
-
                         if let Runtime::Built { runtime, .. } = &mut state.runtime {
                             runtime.reload();
                         }
 
                         state.invalidated = true;
                         tracing::info!("Reloaded in {:?}", timer.elapsed());
-                        return;
                     }
+                    return;
                 }
                 _ => {}
             }
@@ -682,7 +808,9 @@ pub fn reload<Theme: Send + 'static, Renderer: Send + 'static>(
     })
 }
 
-fn watch_file(src_path: PathBuf) -> impl Stream<Item = ()> {
+fn watch_file(path: impl AsRef<Path>) -> impl Stream<Item = ()> {
+    let src_path = path.as_ref().to_path_buf();
+
     stream::channel(
         10,
         move |mut output: futures::channel::mpsc::Sender<()>| async move {

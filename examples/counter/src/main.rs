@@ -32,7 +32,7 @@ impl Counter {
     fn new() -> (Self, iced::Task<Message>) {
         (
             Self::default(),
-            thawing::watch_and_reload::<Message, iced::Theme, iced::Renderer>(ID, Message::Reload),
+            thawing::watcher::<Message, iced::Theme, iced::Renderer>(ID, Message::Reload),
         )
     }
 
@@ -50,7 +50,7 @@ impl Counter {
     fn view(&self) -> Element<Message> {
         thawing::view![
             column![
-                checkbox("click mes!", self.is_checked).on_toggle(Message::Toggled),
+                checkbox("click me!", self.is_checked).on_toggle(Message::Toggled),
                 button("Increment").on_press(Message::Increment),
                 text(self.value).size(50),
                 button("Decrement").on_press(Message::Decrement)
