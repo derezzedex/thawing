@@ -23,6 +23,8 @@ use quote::{ToTokens, quote};
 use syn::visit::{self, Visit};
 
 pub use iced_core::Element;
+pub use serde;
+pub use thawing_macro::{message, state};
 
 // Marker for `view` macro
 pub trait State {}
@@ -596,6 +598,7 @@ fn parse_and_write(caller: impl AsRef<Path>, manifest: impl AsRef<Path>) -> Task
                     } = ViewBuilder::from_file(&caller).build();
 
                     let output = quote! {
+                        use thawing_guest::thawing;
                         use thawing_guest::widget::{button, checkbox, column, text};
                         use thawing_guest::{Application, Center, Element};
 
@@ -614,7 +617,6 @@ fn parse_and_write(caller: impl AsRef<Path>, manifest: impl AsRef<Path>) -> Task
 
                     let content =
                         prettyplease::unparse(&syn::parse_file(&output.to_string()).unwrap());
-                    tracing::warn!("Writing:\n{content}");
                     let mut lib_file = fs::File::options().write(true).open(target).await.unwrap();
                     lib_file.write_all(content.as_bytes()).await.unwrap();
                 })
@@ -911,6 +913,53 @@ impl<'ast> Visit<'ast> for ViewBuilder<'ast> {
             self.message = Some(TypeDef::Struct(node));
         }
 
+        if node
+            .attrs
+            .iter()
+            .find(|attr| {
+                attr.meta
+                    .path()
+                    .segments
+                    .first()
+                    .map(|p| p.ident.to_string())
+                    .is_some_and(|ident| &ident == "thawing")
+                    && attr
+                        .meta
+                        .path()
+                        .segments
+                        .last()
+                        .map(|p| p.ident.to_string())
+                        .is_some_and(|ident| &ident == "state")
+            })
+            .is_some()
+        {
+            self.state_ty = Some(&node.ident);
+            self.state = Some(TypeDef::Struct(node));
+        }
+
+        if node
+            .attrs
+            .iter()
+            .find(|attr| {
+                attr.meta
+                    .path()
+                    .segments
+                    .first()
+                    .map(|p| p.ident.to_string())
+                    .is_some_and(|ident| &ident == "thawing")
+                    && attr
+                        .meta
+                        .path()
+                        .segments
+                        .last()
+                        .map(|p| p.ident.to_string())
+                        .is_some_and(|ident| &ident == "message")
+            })
+            .is_some()
+        {
+            self.message = Some(TypeDef::Struct(node));
+        }
+
         visit::visit_item_struct(self, node);
     }
 
@@ -918,6 +967,53 @@ impl<'ast> Visit<'ast> for ViewBuilder<'ast> {
         if self.state_ty == Some(&node.ident) {
             self.state = Some(TypeDef::Enum(node));
         } else if self.message_ty == Some(&node.ident) {
+            self.message = Some(TypeDef::Enum(node));
+        }
+
+        if node
+            .attrs
+            .iter()
+            .find(|attr| {
+                attr.meta
+                    .path()
+                    .segments
+                    .first()
+                    .map(|p| p.ident.to_string())
+                    .is_some_and(|ident| &ident == "thawing")
+                    && attr
+                        .meta
+                        .path()
+                        .segments
+                        .last()
+                        .map(|p| p.ident.to_string())
+                        .is_some_and(|ident| &ident == "state")
+            })
+            .is_some()
+        {
+            self.state_ty = Some(&node.ident);
+            self.state = Some(TypeDef::Enum(node));
+        }
+
+        if node
+            .attrs
+            .iter()
+            .find(|attr| {
+                attr.meta
+                    .path()
+                    .segments
+                    .first()
+                    .map(|p| p.ident.to_string())
+                    .is_some_and(|ident| &ident == "thawing")
+                    && attr
+                        .meta
+                        .path()
+                        .segments
+                        .last()
+                        .map(|p| p.ident.to_string())
+                        .is_some_and(|ident| &ident == "message")
+            })
+            .is_some()
+        {
             self.message = Some(TypeDef::Enum(node));
         }
 
@@ -985,7 +1081,6 @@ edition = "2024"
 
 [dependencies]
 thawing_guest = { git = "ssh://github.com/derezzedex/thawing", branch = "dev/widget-api" }
-serde = { version = "1.0", features = ["derive"] }
 
 [lib]
 crate-type = ["cdylib"]

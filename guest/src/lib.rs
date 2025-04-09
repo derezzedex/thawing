@@ -55,6 +55,15 @@ macro_rules! thaw {
     }
 }
 
+pub mod thawing {
+    pub trait Message {}
+    pub trait State {}
+
+    pub use serde;
+
+    pub use thawing_macro::{message, state};
+}
+
 pub trait Application {
     fn view(&self) -> impl Into<Element>;
 }

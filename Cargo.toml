@@ -22,9 +22,10 @@ iced_core.workspace = true
 iced_futures.workspace = true
 iced_runtime.workspace = true
 iced_widget.workspace = true
+thawing_macro.workspace = true
 
 [workspace]
-members = ["guest", "examples/*"]
+members = ["guest", "macro", "examples/*"]
 
 [workspace.package]
 version = "0.1.0-dev"
@@ -35,6 +36,7 @@ license = "MIT"
 [workspace.dependencies]
 thawing = { version = "0.1.0-dev", path = "." }
 thawing_guest = { version = "0.1.0-dev", path = "guest" }
+thawing_macro = { version = "0.1.0-dev", path = "macro" }
 wasmtime = "29.0"
 serde = { version = "1.0", features = ["derive", "rc"] }
 bincode = "1.3"

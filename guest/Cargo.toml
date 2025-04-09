@@ -9,6 +9,7 @@ license.workspace = true
 wit-bindgen-rt = "0.41.0"
 bincode.workspace = true
 serde.workspace = true
+thawing_macro.workspace = true
 
 [package.metadata.component]
 package = "thawing:core"

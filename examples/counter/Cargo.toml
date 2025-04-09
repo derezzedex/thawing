@@ -10,7 +10,5 @@ thawing.workspace = true
 iced.workspace = true
 iced.features = ["tokio"]
 tracing.workspace = true
-serde.workspace = true
-serde.features = ["derive"]
 
 tracing-subscriber = "0.3"

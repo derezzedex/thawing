@@ -10,23 +10,21 @@ fn main() -> iced::Result {
 
 const ID: &'static str = "thawing";
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub enum Message {
+#[derive(Debug, Clone)]
+#[thawing::message]
+enum Message {
     Reloaded,
     Toggled(bool),
     Increment,
     Decrement,
 }
 
-impl thawing::Message for Message {}
-
-#[derive(Default, serde::Serialize, serde::Deserialize)]
+#[derive(Default)]
+#[thawing::state]
 struct Counter {
     value: i64,
     is_checked: bool,
 }
-
-impl thawing::State for Counter {}
 
 impl Counter {
     fn new() -> (Self, iced::Task<Message>) {
