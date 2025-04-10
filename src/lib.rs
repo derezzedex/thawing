@@ -24,13 +24,7 @@ use syn::visit::{self, Visit};
 
 pub use iced_core::Element;
 pub use serde;
-pub use thawing_macro::{message, state};
-
-// Marker for `view` macro
-pub trait State {}
-
-// Marker for `view` macro
-pub trait Message {}
+pub use thawing_macro::data;
 
 #[macro_export]
 macro_rules! view {
@@ -590,17 +584,19 @@ fn parse_and_write(caller: impl AsRef<Path>, manifest: impl AsRef<Path>) -> Task
                     let content = fs::read_to_string(caller).await.unwrap();
                     let caller = syn::parse_file(&content).unwrap();
                     let View {
+                        data,
                         message,
                         state,
                         state_ty,
                         view,
-                        ..
                     } = ViewBuilder::from_file(&caller).build();
 
                     let output = quote! {
                         use thawing_guest::thawing;
                         use thawing_guest::widget::{button, checkbox, column, text};
                         use thawing_guest::{Application, Center, Element};
+
+                        #(#data)*
 
                         #message
 
@@ -617,6 +613,7 @@ fn parse_and_write(caller: impl AsRef<Path>, manifest: impl AsRef<Path>) -> Task
 
                     let content =
                         prettyplease::unparse(&syn::parse_file(&output.to_string()).unwrap());
+                    tracing::warn!("Wrote:\n{content}");
                     let mut lib_file = fs::File::options().write(true).open(target).await.unwrap();
                     lib_file.write_all(content.as_bytes()).await.unwrap();
                 })
@@ -866,8 +863,8 @@ pub(crate) struct ViewBuilder<'ast> {
     view: Option<&'ast syn::Macro>,
     state_ty: Option<&'ast syn::Ident>,
     state: Option<TypeDef<'ast>>,
-    message_ty: Option<&'ast syn::Ident>,
     message: Option<TypeDef<'ast>>,
+    data: Vec<TypeDef<'ast>>,
 }
 
 pub(crate) struct View {
@@ -875,17 +872,15 @@ pub(crate) struct View {
     pub(crate) state: TokenStream,
     pub(crate) state_ty: syn::Ident,
     pub(crate) message: TokenStream,
+    pub(crate) data: Vec<TokenStream>,
 }
 
 impl<'ast> ViewBuilder<'ast> {
     pub(crate) fn build(mut self) -> View {
         self.visit_file(&self.file);
 
-        if self.state.is_none() || self.message.is_none() {
-            self.visit_file(&self.file);
-        }
-
         View {
+            data: self.data.iter().map(ToTokens::to_token_stream).collect(),
             view: self.view.unwrap().tokens.clone(),
             state: self.state.unwrap().to_token_stream(),
             state_ty: self.state_ty.unwrap().clone(),
@@ -896,10 +891,10 @@ impl<'ast> ViewBuilder<'ast> {
     pub(crate) fn from_file(file: &'ast syn::File) -> Self {
         Self {
             file,
+            data: vec![],
             view: None,
             state_ty: None,
             state: None,
-            message_ty: None,
             message: None,
         }
     }
@@ -907,145 +902,69 @@ impl<'ast> ViewBuilder<'ast> {
 
 impl<'ast> Visit<'ast> for ViewBuilder<'ast> {
     fn visit_item_struct(&mut self, node: &'ast syn::ItemStruct) {
-        if self.state_ty == Some(&node.ident) {
-            self.state = Some(TypeDef::Struct(node));
-        } else if self.message_ty == Some(&node.ident) {
-            self.message = Some(TypeDef::Struct(node));
-        }
+        for attr in node.attrs.iter() {
+            if attr
+                .path()
+                .segments
+                .first()
+                .is_some_and(|p| p.ident == "thawing")
+            {
+                let mut state_or_data = false;
+                let _ = attr.parse_nested_meta(|meta| {
+                    if meta.path.is_ident("state") {
+                        self.state = Some(TypeDef::Struct(node));
+                        self.state_ty = Some(&node.ident);
+                        state_or_data = true;
+                    }
 
-        if node
-            .attrs
-            .iter()
-            .find(|attr| {
-                attr.meta
-                    .path()
-                    .segments
-                    .first()
-                    .map(|p| p.ident.to_string())
-                    .is_some_and(|ident| &ident == "thawing")
-                    && attr
-                        .meta
-                        .path()
-                        .segments
-                        .last()
-                        .map(|p| p.ident.to_string())
-                        .is_some_and(|ident| &ident == "state")
-            })
-            .is_some()
-        {
-            self.state_ty = Some(&node.ident);
-            self.state = Some(TypeDef::Struct(node));
-        }
+                    if meta.path.is_ident("message") {
+                        self.message = Some(TypeDef::Struct(node));
+                        state_or_data = true;
+                    }
 
-        if node
-            .attrs
-            .iter()
-            .find(|attr| {
-                attr.meta
-                    .path()
-                    .segments
-                    .first()
-                    .map(|p| p.ident.to_string())
-                    .is_some_and(|ident| &ident == "thawing")
-                    && attr
-                        .meta
-                        .path()
-                        .segments
-                        .last()
-                        .map(|p| p.ident.to_string())
-                        .is_some_and(|ident| &ident == "message")
-            })
-            .is_some()
-        {
-            self.message = Some(TypeDef::Struct(node));
+                    Ok(())
+                });
+
+                if !state_or_data {
+                    self.data.push(TypeDef::Struct(node));
+                }
+            }
         }
 
         visit::visit_item_struct(self, node);
     }
 
     fn visit_item_enum(&mut self, node: &'ast syn::ItemEnum) {
-        if self.state_ty == Some(&node.ident) {
-            self.state = Some(TypeDef::Enum(node));
-        } else if self.message_ty == Some(&node.ident) {
-            self.message = Some(TypeDef::Enum(node));
-        }
-
-        if node
-            .attrs
-            .iter()
-            .find(|attr| {
-                attr.meta
-                    .path()
-                    .segments
-                    .first()
-                    .map(|p| p.ident.to_string())
-                    .is_some_and(|ident| &ident == "thawing")
-                    && attr
-                        .meta
-                        .path()
-                        .segments
-                        .last()
-                        .map(|p| p.ident.to_string())
-                        .is_some_and(|ident| &ident == "state")
-            })
-            .is_some()
-        {
-            self.state_ty = Some(&node.ident);
-            self.state = Some(TypeDef::Enum(node));
-        }
-
-        if node
-            .attrs
-            .iter()
-            .find(|attr| {
-                attr.meta
-                    .path()
-                    .segments
-                    .first()
-                    .map(|p| p.ident.to_string())
-                    .is_some_and(|ident| &ident == "thawing")
-                    && attr
-                        .meta
-                        .path()
-                        .segments
-                        .last()
-                        .map(|p| p.ident.to_string())
-                        .is_some_and(|ident| &ident == "message")
-            })
-            .is_some()
-        {
-            self.message = Some(TypeDef::Enum(node));
-        }
-
-        visit::visit_item_enum(self, node);
-    }
-
-    fn visit_item_impl(&mut self, node: &'ast syn::ItemImpl) {
-        if let Some((_, path, _)) = &node.trait_ {
-            if path
+        for attr in node.attrs.iter() {
+            if attr
+                .path()
                 .segments
                 .first()
-                .map(|p| p.ident.to_string())
-                .is_some_and(|ident| &ident == "thawing")
+                .is_some_and(|p| p.ident == "thawing")
             {
-                let marker = path.segments.last().map(|p| p.ident.to_string());
-                match marker {
-                    Some(ident) if &ident == "State" => {
-                        if let syn::Type::Path(self_ty) = &*node.self_ty {
-                            self.state_ty = self_ty.path.get_ident();
-                        }
+                let mut state_or_data = false;
+                let _ = attr.parse_nested_meta(|meta| {
+                    if meta.path.is_ident("state") {
+                        self.state = Some(TypeDef::Enum(node));
+                        self.state_ty = Some(&node.ident);
+                        state_or_data = true;
                     }
-                    Some(ident) if &ident == "Message" => {
-                        if let syn::Type::Path(self_ty) = &*node.self_ty {
-                            self.message_ty = self_ty.path.get_ident();
-                        }
+
+                    if meta.path.is_ident("message") {
+                        self.message = Some(TypeDef::Enum(node));
+                        state_or_data = true;
                     }
-                    _ => {}
+
+                    Ok(())
+                });
+
+                if !state_or_data {
+                    self.data.push(TypeDef::Enum(node));
                 }
             }
         }
 
-        visit::visit_item_impl(self, node);
+        visit::visit_item_enum(self, node);
     }
 
     fn visit_macro(&mut self, node: &'ast syn::Macro) {
@@ -1080,7 +999,7 @@ edition = "2024"
 [workspace]
 
 [dependencies]
-thawing_guest = { git = "ssh://github.com/derezzedex/thawing", branch = "dev/widget-api" }
+thawing_guest = { git = "ssh://github.com/derezzedex/thawing" }
 
 [lib]
 crate-type = ["cdylib"]

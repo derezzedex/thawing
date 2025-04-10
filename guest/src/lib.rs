@@ -56,12 +56,8 @@ macro_rules! thaw {
 }
 
 pub mod thawing {
-    pub trait Message {}
-    pub trait State {}
-
     pub use serde;
-
-    pub use thawing_macro::{message, state};
+    pub use thawing_macro::data;
 }
 
 pub trait Application {

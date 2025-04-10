@@ -11,16 +11,22 @@ fn main() -> iced::Result {
 const ID: &'static str = "thawing";
 
 #[derive(Debug, Clone)]
-#[thawing::message]
-enum Message {
-    Reloaded,
-    Toggled(bool),
+#[thawing::data]
+enum Change {
     Increment,
     Decrement,
 }
 
+#[derive(Debug, Clone)]
+#[thawing::data(message)]
+enum Message {
+    Reloaded,
+    Toggled(bool),
+    Change(Change),
+}
+
 #[derive(Default)]
-#[thawing::state]
+#[thawing::data(state)]
 struct Counter {
     value: i64,
     is_checked: bool,
@@ -40,8 +46,8 @@ impl Counter {
                 tracing::info!("Reloaded!");
             }
             Message::Toggled(is_checked) => self.is_checked = is_checked,
-            Message::Increment => self.value += 1,
-            Message::Decrement => self.value -= 1,
+            Message::Change(Change::Increment) => self.value += 1,
+            Message::Change(Change::Decrement) => self.value -= 1,
         }
     }
 
@@ -49,9 +55,9 @@ impl Counter {
         thawing::view![
             column![
                 checkbox("click me!", self.is_checked).on_toggle(Message::Toggled),
-                button("Increment").on_press(Message::Increment),
+                button("Increment").on_press(Message::Change(Change::Increment)),
                 text(self.value).size(50),
-                button("Decrement").on_press(Message::Decrement)
+                button("Decrement").on_press(Message::Change(Change::Decrement))
             ]
             .padding(20)
             .align_x(Center)
