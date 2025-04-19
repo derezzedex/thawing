@@ -24,6 +24,7 @@ where
     Renderer: 'static + Send + iced_core::Renderer + text::Renderer,
     Theme: 'static
         + Send
+        + serde::Serialize
         + iced_widget::checkbox::Catalog
         + iced_widget::button::Catalog
         + iced_widget::text::Catalog,
@@ -182,9 +183,10 @@ fn parse_and_write(caller: impl AsRef<Path>, manifest: impl AsRef<Path>) -> Task
                     } = ViewBuilder::from_file(&caller).build();
 
                     let output = quote! {
+                        #![allow(unused_imports)]
                         use thawing_guest::thawing;
-                        use thawing_guest::widget::{button, checkbox, column, text};
-                        use thawing_guest::{Application, Center, Element};
+                        use thawing_guest::widget::{button, checkbox, column, text, Style};
+                        use thawing_guest::{Application, Center, Element, Color, Theme, color};
 
                         #(#data)*
 
@@ -263,6 +265,7 @@ where
     Renderer: 'static + Send + iced_core::Renderer + text::Renderer,
     Theme: 'static
         + Send
+        + serde::Serialize
         + iced_widget::checkbox::Catalog
         + iced_widget::button::Catalog
         + iced_widget::text::Catalog,
@@ -283,6 +286,7 @@ where
         Renderer: 'static + Send + iced_core::Renderer + text::Renderer,
         Theme: 'static
             + Send
+            + serde::Serialize
             + iced_widget::checkbox::Catalog
             + iced_widget::button::Catalog
             + iced_widget::text::Catalog,

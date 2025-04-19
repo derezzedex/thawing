@@ -999,6 +999,30 @@ pub mod thawing {
             }
             impl Text {
                 #[allow(unused_unsafe, clippy::all)]
+                pub fn style(&self, style_fn: Closure) -> Text {
+                    unsafe {
+                        #[cfg(target_arch = "wasm32")]
+                        #[link(wasm_import_module = "thawing:core/widget")]
+                        unsafe extern "C" {
+                            #[link_name = "[method]text.style"]
+                            fn wit_import0(_: i32, _: i32) -> i32;
+                        }
+                        #[cfg(not(target_arch = "wasm32"))]
+                        unsafe extern "C" fn wit_import0(_: i32, _: i32) -> i32 {
+                            unreachable!()
+                        }
+                        let ret = unsafe {
+                            wit_import0(
+                                (self).handle() as i32,
+                                (&style_fn).take_handle() as i32,
+                            )
+                        };
+                        unsafe { Text::from_handle(ret as u32) }
+                    }
+                }
+            }
+            impl Text {
+                #[allow(unused_unsafe, clippy::all)]
                 pub fn into_element(&self) -> Element {
                     unsafe {
                         #[cfg(target_arch = "wasm32")]
@@ -1745,9 +1769,9 @@ macro_rules! __export_thawing_impl {
         () = { #[cfg(target_arch = "wasm32")] #[unsafe (link_section =
         "component-type:wit-bindgen:0.41.0:thawing:core:thawing:imports and exports")]
         #[doc(hidden)] #[allow(clippy::octal_escapes)] pub static
-        __WIT_BINDGEN_COMPONENT_TYPE : [u8; 2049] = *
+        __WIT_BINDGEN_COMPONENT_TYPE : [u8; 2093] = *
         b"\
-\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\x83\x0f\x01A\x02\x01\
+\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xaf\x0f\x01A\x02\x01\
 A\x0e\x01B\x14\x04\0\x07closure\x03\x01\x04\0\x07element\x03\x01\x01p}\x04\0\x05\
 bytes\x03\0\x02\x01r\x01\x06amountv\x04\0\x06pixels\x03\0\x04\x01r\x04\x01rv\x01\
 gv\x01bv\x01av\x04\0\x05color\x03\0\x06\x01r\x04\x03topv\x05rightv\x06bottomv\x04\
@@ -1757,7 +1781,7 @@ right\x04\0\x0ahorizontal\x03\0\x0c\x01i\0\x01@\0\0\x0e\x04\0\x14[constructor]cl
 osure\x01\x0f\x01h\0\x01@\x01\x04self\x10\0y\x04\0\x12[method]closure.id\x01\x11\
 \x03\0\x12thawing:core/types\x05\0\x02\x03\0\0\x07element\x02\x03\0\0\x07closure\
 \x02\x03\0\0\x06pixels\x02\x03\0\0\x07padding\x02\x03\0\0\x06length\x02\x03\0\0\x0a\
-horizontal\x02\x03\0\0\x05color\x01BI\x02\x03\x02\x01\x01\x04\0\x07element\x03\0\
+horizontal\x02\x03\0\0\x05color\x01BK\x02\x03\x02\x01\x01\x04\0\x07element\x03\0\
 \0\x02\x03\x02\x01\x02\x04\0\x07closure\x03\0\x02\x02\x03\x02\x01\x03\x04\0\x06p\
 ixels\x03\0\x04\x02\x03\x02\x01\x04\x04\0\x07padding\x03\0\x06\x02\x03\x02\x01\x05\
 \x04\0\x06length\x03\0\x08\x02\x03\x02\x01\x06\x04\0\x0ahorizontal\x03\0\x0a\x02\
@@ -1782,18 +1806,19 @@ align\x0b\0\x1e\x04\0\x16[method]column.align-x\x01(\x01@\x02\x04self\"\x04clip\
 [method]column.extend\x01+\x01@\x01\x04self\"\0\x12\x04\0\x1b[method]column.into\
 -element\x01,\x01i\x11\x01@\x01\x08fragments\0-\x04\0\x11[constructor]text\x01.\x01\
 h\x11\x01@\x02\x04self/\x04size\x05\0-\x04\0\x11[method]text.size\x010\x01@\x02\x04\
-self/\x05color\x0d\0-\x04\0\x12[method]text.color\x011\x01@\x01\x04self/\0\x12\x04\
-\0\x19[method]text.into-element\x012\x03\0\x13thawing:core/widget\x05\x08\x02\x03\
-\0\0\x05bytes\x01B\x18\x02\x03\x02\x01\x01\x04\0\x07element\x03\0\0\x02\x03\x02\x01\
-\x02\x04\0\x07closure\x03\0\x02\x02\x03\x02\x01\x09\x04\0\x05bytes\x03\0\x04\x04\
-\0\x05table\x03\x01\x04\0\x03app\x03\x01\x01i\x06\x01@\0\0\x08\x04\0\x12[constru\
-ctor]table\x01\x09\x01h\x06\x01i\x03\x01@\x02\x04self\x0a\x01c\x0b\0\x05\x04\0\x12\
-[method]table.call\x01\x0c\x01@\x03\x04self\x0a\x01c\x0b\x05state\x05\0\x05\x04\0\
-\x17[method]table.call-with\x01\x0d\x01i\x07\x01@\x01\x05state\x05\0\x0e\x04\0\x10\
-[constructor]app\x01\x0f\x01h\x07\x01i\x01\x01@\x01\x04self\x10\0\x11\x04\0\x10[\
-method]app.view\x01\x12\x04\0\x12thawing:core/guest\x05\x0a\x04\0\x14thawing:cor\
-e/thawing\x04\0\x0b\x0d\x01\0\x07thawing\x03\0\0\0G\x09producers\x01\x0cprocesse\
-d-by\x02\x0dwit-component\x070.227.1\x10wit-bindgen-rust\x060.41.0";
+self/\x05color\x0d\0-\x04\0\x12[method]text.color\x011\x01@\x02\x04self/\x08styl\
+e-fn\x16\0-\x04\0\x12[method]text.style\x012\x01@\x01\x04self/\0\x12\x04\0\x19[m\
+ethod]text.into-element\x013\x03\0\x13thawing:core/widget\x05\x08\x02\x03\0\0\x05\
+bytes\x01B\x18\x02\x03\x02\x01\x01\x04\0\x07element\x03\0\0\x02\x03\x02\x01\x02\x04\
+\0\x07closure\x03\0\x02\x02\x03\x02\x01\x09\x04\0\x05bytes\x03\0\x04\x04\0\x05ta\
+ble\x03\x01\x04\0\x03app\x03\x01\x01i\x06\x01@\0\0\x08\x04\0\x12[constructor]tab\
+le\x01\x09\x01h\x06\x01i\x03\x01@\x02\x04self\x0a\x01c\x0b\0\x05\x04\0\x12[metho\
+d]table.call\x01\x0c\x01@\x03\x04self\x0a\x01c\x0b\x05state\x05\0\x05\x04\0\x17[\
+method]table.call-with\x01\x0d\x01i\x07\x01@\x01\x05state\x05\0\x0e\x04\0\x10[co\
+nstructor]app\x01\x0f\x01h\x07\x01i\x01\x01@\x01\x04self\x10\0\x11\x04\0\x10[met\
+hod]app.view\x01\x12\x04\0\x12thawing:core/guest\x05\x0a\x04\0\x14thawing:core/t\
+hawing\x04\0\x0b\x0d\x01\0\x07thawing\x03\0\0\0G\x09producers\x01\x0cprocessed-b\
+y\x02\x0dwit-component\x070.227.1\x10wit-bindgen-rust\x060.41.0";
         };
     };
 }
@@ -1803,8 +1828,8 @@ pub use __export_thawing_impl as export;
 #[unsafe(link_section = "component-type:wit-bindgen:0.41.0:thawing:core:thawing-with-all-of-its-exports-removed:encoded world")]
 #[doc(hidden)]
 #[allow(clippy::octal_escapes)]
-pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 1810] = *b"\
-\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xf4\x0c\x01A\x02\x01\
+pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 1854] = *b"\
+\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xa0\x0d\x01A\x02\x01\
 A\x0b\x01B\x14\x04\0\x07closure\x03\x01\x04\0\x07element\x03\x01\x01p}\x04\0\x05\
 bytes\x03\0\x02\x01r\x01\x06amountv\x04\0\x06pixels\x03\0\x04\x01r\x04\x01rv\x01\
 gv\x01bv\x01av\x04\0\x05color\x03\0\x06\x01r\x04\x03topv\x05rightv\x06bottomv\x04\
@@ -1814,7 +1839,7 @@ right\x04\0\x0ahorizontal\x03\0\x0c\x01i\0\x01@\0\0\x0e\x04\0\x14[constructor]cl
 osure\x01\x0f\x01h\0\x01@\x01\x04self\x10\0y\x04\0\x12[method]closure.id\x01\x11\
 \x03\0\x12thawing:core/types\x05\0\x02\x03\0\0\x07element\x02\x03\0\0\x07closure\
 \x02\x03\0\0\x06pixels\x02\x03\0\0\x07padding\x02\x03\0\0\x06length\x02\x03\0\0\x0a\
-horizontal\x02\x03\0\0\x05color\x01BI\x02\x03\x02\x01\x01\x04\0\x07element\x03\0\
+horizontal\x02\x03\0\0\x05color\x01BK\x02\x03\x02\x01\x01\x04\0\x07element\x03\0\
 \0\x02\x03\x02\x01\x02\x04\0\x07closure\x03\0\x02\x02\x03\x02\x01\x03\x04\0\x06p\
 ixels\x03\0\x04\x02\x03\x02\x01\x04\x04\0\x07padding\x03\0\x06\x02\x03\x02\x01\x05\
 \x04\0\x06length\x03\0\x08\x02\x03\x02\x01\x06\x04\0\x0ahorizontal\x03\0\x0a\x02\
@@ -1839,11 +1864,12 @@ align\x0b\0\x1e\x04\0\x16[method]column.align-x\x01(\x01@\x02\x04self\"\x04clip\
 [method]column.extend\x01+\x01@\x01\x04self\"\0\x12\x04\0\x1b[method]column.into\
 -element\x01,\x01i\x11\x01@\x01\x08fragments\0-\x04\0\x11[constructor]text\x01.\x01\
 h\x11\x01@\x02\x04self/\x04size\x05\0-\x04\0\x11[method]text.size\x010\x01@\x02\x04\
-self/\x05color\x0d\0-\x04\0\x12[method]text.color\x011\x01@\x01\x04self/\0\x12\x04\
-\0\x19[method]text.into-element\x012\x03\0\x13thawing:core/widget\x05\x08\x04\04\
-thawing:core/thawing-with-all-of-its-exports-removed\x04\0\x0b-\x01\0'thawing-wi\
-th-all-of-its-exports-removed\x03\0\0\0G\x09producers\x01\x0cprocessed-by\x02\x0d\
-wit-component\x070.227.1\x10wit-bindgen-rust\x060.41.0";
+self/\x05color\x0d\0-\x04\0\x12[method]text.color\x011\x01@\x02\x04self/\x08styl\
+e-fn\x16\0-\x04\0\x12[method]text.style\x012\x01@\x01\x04self/\0\x12\x04\0\x19[m\
+ethod]text.into-element\x013\x03\0\x13thawing:core/widget\x05\x08\x04\04thawing:\
+core/thawing-with-all-of-its-exports-removed\x04\0\x0b-\x01\0'thawing-with-all-o\
+f-its-exports-removed\x03\0\0\0G\x09producers\x01\x0cprocessed-by\x02\x0dwit-com\
+ponent\x070.227.1\x10wit-bindgen-rust\x060.41.0";
 #[inline(never)]
 #[doc(hidden)]
 pub fn __link_custom_section_describing_imports() {

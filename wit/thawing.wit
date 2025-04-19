@@ -83,6 +83,7 @@ interface widget {
 
     size: func(size: pixels) -> text;
     color: func(color: color) -> text;
+    style: func(style-fn: closure) -> text;
     into-element: func() -> element;
   }
 }

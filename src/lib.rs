@@ -105,6 +105,7 @@ where
     Message: 'static + serde::Serialize + serde::de::DeserializeOwned,
     Renderer: 'static + iced_core::Renderer + iced_core::text::Renderer,
     Theme: 'static
+        + serde::Serialize
         + iced_widget::checkbox::Catalog
         + iced_widget::button::Catalog
         + iced_widget::text::Catalog,
@@ -135,6 +136,7 @@ impl<Theme, Renderer> Inner<Theme, Renderer>
 where
     Renderer: 'static + iced_core::Renderer + text::Renderer,
     Theme: 'static
+        + serde::Serialize
         + iced_widget::checkbox::Catalog
         + iced_widget::button::Catalog
         + iced_widget::text::Catalog,
@@ -180,6 +182,7 @@ where
     Message: serde::Serialize + serde::de::DeserializeOwned,
     Renderer: 'static + iced_core::Renderer + text::Renderer,
     Theme: 'static
+        + serde::Serialize
         + iced_widget::checkbox::Catalog
         + iced_widget::button::Catalog
         + iced_widget::text::Catalog,

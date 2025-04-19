@@ -39,6 +39,22 @@ impl Closure {
         }
     }
 
+    pub fn stateful_ref<S, T>(func: impl Fn(&S) -> T + Send + 'static) -> Self
+    where
+        S: serde::de::DeserializeOwned + 'static,
+        T: serde::Serialize + 'static,
+    {
+        let wrapper = move |state: AnyBox| -> AnyBox {
+            let bytes = state.downcast::<guest::Bytes>();
+            let msg = func(&bincode::deserialize(&bytes).unwrap());
+            AnyBox::new(bincode::serialize(&msg).unwrap())
+        };
+
+        Self {
+            func: Box::new(wrapper),
+        }
+    }
+
     pub fn stateless<T>(func: impl Fn() -> T + Send + 'static) -> Self
     where
         T: serde::Serialize + 'static,

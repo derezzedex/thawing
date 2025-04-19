@@ -97,6 +97,12 @@ impl<'a, Theme, Renderer> State<'a, Theme, Renderer> {
             .table()
             .call_constructor(&mut *store)
             .unwrap();
+
+        store.data_mut().fill(
+            self.store.clone(),
+            self.bindings.clone(),
+            self.table.clone(),
+        );
     }
 }
 
@@ -104,6 +110,7 @@ impl<'a, Theme, Renderer> State<'a, Theme, Renderer>
 where
     Renderer: 'a + iced_core::Renderer + text::Renderer,
     Theme: 'a
+        + serde::Serialize
         + iced_widget::checkbox::Catalog
         + iced_widget::button::Catalog
         + iced_widget::text::Catalog,
@@ -132,11 +139,20 @@ where
             .call_constructor(&mut store)
             .unwrap();
 
+        let store = Rc::new(RefCell::new(store));
+        let bindings = Rc::new(RefCell::new(bindings));
+        let table = Rc::new(RefCell::new(table));
+
+        store
+            .borrow_mut()
+            .data_mut()
+            .fill(store.clone(), bindings.clone(), table.clone());
+
         Self {
             wasm: BinaryPath::temporary(temp_dir, wasm),
-            store: Rc::new(RefCell::new(store)),
-            bindings: Rc::new(RefCell::new(bindings)),
-            table: Rc::new(RefCell::new(table)),
+            store,
+            bindings,
+            table,
             engine,
             linker,
         }
@@ -182,11 +198,20 @@ where
             .call_constructor(&mut store)
             .unwrap();
 
+        let store = Rc::new(RefCell::new(store));
+        let bindings = Rc::new(RefCell::new(bindings));
+        let table = Rc::new(RefCell::new(table));
+
+        store
+            .borrow_mut()
+            .data_mut()
+            .fill(store.clone(), bindings.clone(), table.clone());
+
         Self {
             wasm: BinaryPath::UserProvided(wasm),
-            store: Rc::new(RefCell::new(store)),
-            bindings: Rc::new(RefCell::new(bindings)),
-            table: Rc::new(RefCell::new(table)),
+            store,
+            bindings,
+            table,
             engine,
             linker,
         }
@@ -268,11 +293,17 @@ where
 }
 
 type Table<T> = HashMap<u32, T>;
+type StoreCell<'a, Theme, Renderer> = Rc<RefCell<Store<Guest<'a, Theme, Renderer>>>>;
+type BindingsCell = Rc<RefCell<Thawing>>;
+type ResourceCell = Rc<RefCell<ResourceAny>>;
 
 #[derive(Default)]
 pub(crate) struct Guest<'a, Theme, Renderer> {
     pub(crate) table: ResourceTable,
     pub(crate) element: Table<Element<'a, Message, Theme, Renderer>>,
+    pub(crate) store: Option<StoreCell<'a, Theme, Renderer>>,
+    pub(crate) bindings: Option<BindingsCell>,
+    pub(crate) resource: Option<ResourceCell>,
 }
 
 impl<'a, Theme, Renderer> Guest<'a, Theme, Renderer> {
@@ -280,7 +311,21 @@ impl<'a, Theme, Renderer> Guest<'a, Theme, Renderer> {
         Self {
             table: ResourceTable::new(),
             element: Table::new(),
+            store: None,
+            bindings: None,
+            resource: None,
         }
+    }
+
+    fn fill(
+        &mut self,
+        store: StoreCell<'a, Theme, Renderer>,
+        bindings: BindingsCell,
+        table: ResourceCell,
+    ) {
+        self.store = Some(store);
+        self.bindings = Some(bindings);
+        self.resource = Some(table);
     }
 }
 
@@ -330,6 +375,7 @@ impl<'a, Theme, Renderer> core::widget::Host for Guest<'a, Theme, Renderer>
 where
     Renderer: 'a + iced_core::Renderer + text::Renderer,
     Theme: 'a
+        + serde::Serialize
         + iced_widget::checkbox::Catalog
         + iced_widget::button::Catalog
         + iced_widget::text::Catalog,

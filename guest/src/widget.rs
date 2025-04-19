@@ -1,26 +1,29 @@
-use crate::core::types::{Color, Element, Horizontal, Length, Padding, Pixels};
+use crate::Element;
+use crate::core::types::{Color, Horizontal, Length, Padding, Pixels};
 use crate::core::widget;
 use crate::guest;
 use crate::runtime::{Closure, TABLE};
 
 use std::marker::PhantomData;
 
-pub fn button<Message: serde::Serialize + Clone + Send + 'static>(
-    content: impl Into<Element>,
-) -> Button<Message> {
+pub fn button<Message: serde::Serialize + Clone + Send + 'static, Theme>(
+    content: impl Into<Element<Theme>>,
+) -> Button<Message, Theme> {
     Button::new(content)
 }
 
-pub struct Button<Message> {
+pub struct Button<Message, Theme = crate::Theme> {
     raw: widget::Button,
-    message: PhantomData<Message>,
+    _message: PhantomData<Message>,
+    _theme: PhantomData<Theme>,
 }
 
-impl<Message: serde::Serialize + Clone + Send + 'static> Button<Message> {
-    pub fn new(content: impl Into<Element>) -> Self {
+impl<Message: serde::Serialize + Clone + Send + 'static, Theme> Button<Message, Theme> {
+    pub fn new(content: impl Into<Element<Theme>>) -> Self {
         Self {
-            raw: widget::Button::new(content.into()),
-            message: PhantomData,
+            raw: widget::Button::new(content.into().into_raw()),
+            _message: PhantomData,
+            _theme: PhantomData,
         }
     }
 
@@ -39,23 +42,25 @@ impl<Message: serde::Serialize + Clone + Send + 'static> Button<Message> {
     }
 }
 
-pub fn checkbox<Message: serde::Serialize + 'static>(
+pub fn checkbox<Message: serde::Serialize + 'static, Theme>(
     label: impl Into<String>,
     is_checked: bool,
-) -> Checkbox<Message> {
+) -> Checkbox<Message, Theme> {
     Checkbox::new(label, is_checked)
 }
 
-pub struct Checkbox<Message> {
+pub struct Checkbox<Message, Theme = crate::Theme> {
     raw: widget::Checkbox,
-    message: PhantomData<Message>,
+    _message: PhantomData<Message>,
+    _theme: PhantomData<Theme>,
 }
 
-impl<Message: serde::Serialize + 'static> Checkbox<Message> {
+impl<Message: serde::Serialize + 'static, Theme> Checkbox<Message, Theme> {
     pub fn new(label: impl Into<String>, is_checked: bool) -> Self {
         Self {
             raw: widget::Checkbox::new(&label.into(), is_checked),
-            message: PhantomData,
+            _message: PhantomData,
+            _theme: PhantomData,
         }
     }
 
@@ -76,30 +81,33 @@ macro_rules! column {
         $crate::widget::Column::new()
     );
     ($($x:expr),+ $(,)?) => (
-        $crate::widget::Column::with_children([$($crate::core::types::Element::from($x)),+])
+        $crate::widget::Column::with_children([$($crate::Element::from($x)),+])
     );
 }
 
 pub use column;
 
-pub struct Column {
+pub struct Column<Theme = crate::Theme> {
     raw: widget::Column,
+    _theme: PhantomData<Theme>,
 }
 
-impl Column {
+impl<Theme> Column<Theme> {
     pub fn new() -> Self {
         Self {
             raw: widget::Column::new(),
+            _theme: PhantomData,
         }
     }
 
-    pub fn from_vec(children: Vec<Element>) -> Self {
+    pub fn from_vec(children: Vec<Element<Theme>>) -> Self {
         Self {
-            raw: widget::Column::from_vec(children),
+            raw: widget::Column::from_vec(children.into_iter().map(Element::into_raw).collect()),
+            _theme: PhantomData,
         }
     }
 
-    pub fn with_children(children: impl IntoIterator<Item = Element>) -> Self {
+    pub fn with_children(children: impl IntoIterator<Item = Element<Theme>>) -> Self {
         let iterator = children.into_iter();
 
         Self::with_capacity(iterator.size_hint().0).extend(iterator)
@@ -144,12 +152,12 @@ impl Column {
         self
     }
 
-    pub fn push(mut self, content: impl Into<Element>) -> Self {
-        self.raw = self.raw.push(content.into());
+    pub fn push(mut self, content: impl Into<Element<Theme>>) -> Self {
+        self.raw = self.raw.push(content.into().into_raw());
         self
     }
 
-    pub fn extend(self, children: impl IntoIterator<Item = Element>) -> Self {
+    pub fn extend(self, children: impl IntoIterator<Item = Element<Theme>>) -> Self {
         children.into_iter().fold(self, Self::push)
     }
 }
@@ -163,14 +171,16 @@ macro_rules! text {
 
 pub use text;
 
-pub struct Text {
+pub struct Text<Theme = crate::Theme> {
     raw: widget::Text,
+    _theme: PhantomData<Theme>,
 }
 
-impl Text {
+impl<Theme> Text<Theme> {
     pub fn new(fragment: impl ToString) -> Self {
         Self {
             raw: widget::Text::new(&fragment.to_string()),
+            _theme: PhantomData,
         }
     }
 
@@ -185,38 +195,58 @@ impl Text {
     }
 }
 
-impl From<&str> for Element {
-    fn from(content: &str) -> Element {
+impl<Theme> Text<Theme>
+where
+    Theme: serde::de::DeserializeOwned + 'static,
+{
+    pub fn style(mut self, f: impl Fn(&Theme) -> Style + Send + 'static) -> Self {
+        let closure = guest::Closure::new();
+        TABLE
+            .lock()
+            .unwrap()
+            .insert(closure.id(), Closure::stateful_ref(f));
+        self.raw = self.raw.style(closure);
+        self
+    }
+}
+
+#[derive(serde::Serialize)]
+pub struct Style {
+    pub color: Option<Color>,
+}
+
+impl<Theme> From<&str> for Element<Theme> {
+    fn from(content: &str) -> Element<Theme> {
         Text::new(content).into()
     }
 }
 
-impl<T: ToString> From<T> for Text {
-    fn from(content: T) -> Text {
+impl<T: ToString, Theme> From<T> for Text<Theme> {
+    fn from(content: T) -> Text<Theme> {
         Text::new(content)
     }
 }
 
-impl From<Text> for Element {
-    fn from(text: Text) -> Self {
-        text.raw.into_element()
+impl<Theme> From<Text<Theme>> for Element<Theme> {
+    fn from(text: Text<Theme>) -> Self {
+        Element::from(text.raw.into_element())
     }
 }
 
-impl<Message> From<Button<Message>> for Element {
-    fn from(button: Button<Message>) -> Self {
-        button.raw.into_element()
+impl<Message, Theme> From<Button<Message, Theme>> for Element<Theme> {
+    fn from(button: Button<Message, Theme>) -> Self {
+        Element::from(button.raw.into_element())
     }
 }
 
-impl<Message> From<Checkbox<Message>> for Element {
-    fn from(checkbox: Checkbox<Message>) -> Self {
-        checkbox.raw.into_element()
+impl<Message, Theme> From<Checkbox<Message, Theme>> for Element<Theme> {
+    fn from(checkbox: Checkbox<Message, Theme>) -> Self {
+        Element::from(checkbox.raw.into_element())
     }
 }
 
-impl From<Column> for Element {
-    fn from(column: Column) -> Self {
-        column.raw.into_element()
+impl<Theme> From<Column<Theme>> for Element<Theme> {
+    fn from(column: Column<Theme>) -> Self {
+        Element::from(column.raw.into_element())
     }
 }
