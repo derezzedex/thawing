@@ -47,41 +47,22 @@ impl AsRef<Path> for BinaryPath {
     }
 }
 
-pub(crate) struct State<'a, Theme, Renderer> {
-    wasm: BinaryPath,
-    store: Rc<RefCell<Store<guest::State<'a, Theme, Renderer>>>>,
-    bindings: Rc<RefCell<Thawing>>,
-    table: Rc<RefCell<ResourceAny>>,
-
+pub(crate) struct Runtime<'a, Theme, Renderer> {
     engine: Engine,
     linker: Linker<guest::State<'a, Theme, Renderer>>,
+    state: State<'a, Theme, Renderer>,
+    binary_path: BinaryPath,
 }
 
-impl<'a, Theme, Renderer> State<'a, Theme, Renderer> {
+impl<'a, Theme, Renderer> Runtime<'a, Theme, Renderer> {
     pub fn reload(&mut self) {
-        let component = Component::from_file(&self.engine, &self.wasm).unwrap();
-        let mut store = self.store.borrow_mut();
-        let mut bindings = self.bindings.borrow_mut();
-        *store = Store::new(&self.engine, guest::State::new());
-        *bindings = Thawing::instantiate(&mut *store, &component, &self.linker).unwrap();
-
-        let mut table = self.table.borrow_mut();
-
-        *table = bindings
-            .thawing_core_guest()
-            .table()
-            .call_constructor(&mut *store)
-            .unwrap();
-
-        store.data_mut().fill(
-            self.store.clone(),
-            self.bindings.clone(),
-            self.table.clone(),
-        );
+        self.state
+            .reload(&self.engine, &self.linker, &self.binary_path);
+        self.state.fill_store();
     }
 }
 
-impl<'a, Theme, Renderer> State<'a, Theme, Renderer>
+impl<'a, Theme, Renderer> Runtime<'a, Theme, Renderer>
 where
     Renderer: 'a + iced_core::Renderer + text::Renderer,
     Theme: 'a
@@ -100,36 +81,17 @@ where
             .join("component.wasm");
 
         let engine = Engine::default();
-        let component = Component::from_file(&engine, &wasm).unwrap();
-
         let mut linker = Linker::new(&engine);
         Thawing::add_to_linker(&mut linker, |state| state).unwrap();
 
-        let mut store = Store::new(&engine, guest::State::new());
-        let bindings = Thawing::instantiate(&mut store, &component, &linker).unwrap();
-
-        let table = bindings
-            .thawing_core_guest()
-            .table()
-            .call_constructor(&mut store)
-            .unwrap();
-
-        let store = Rc::new(RefCell::new(store));
-        let bindings = Rc::new(RefCell::new(bindings));
-        let table = Rc::new(RefCell::new(table));
-
-        store
-            .borrow_mut()
-            .data_mut()
-            .fill(store.clone(), bindings.clone(), table.clone());
+        let mut state = State::new(&engine, &linker, &wasm);
+        state.fill_store();
 
         Self {
-            wasm: BinaryPath::temporary(temp_dir, wasm),
-            store,
-            bindings,
-            table,
             engine,
             linker,
+            state,
+            binary_path: BinaryPath::temporary(temp_dir, wasm),
         }
     }
 
@@ -159,13 +121,49 @@ where
         .path();
 
         let engine = Engine::default();
-        let component = Component::from_file(&engine, &wasm).unwrap();
-
         let mut linker = Linker::new(&engine);
         Thawing::add_to_linker(&mut linker, |state| state).unwrap();
 
+        let mut state = State::new(&engine, &linker, &wasm);
+        state.fill_store();
+
+        Self {
+            engine,
+            linker,
+            state,
+            binary_path: BinaryPath::UserProvided(wasm),
+        }
+    }
+
+    pub fn call<Message: serde::de::DeserializeOwned>(
+        &self,
+        closure: u32,
+        data: impl Into<Option<Bytes>>,
+    ) -> Message {
+        self.state.call(closure, data)
+    }
+
+    pub fn view(&self, bytes: &Vec<u8>) -> Element<'a, guest::Message, Theme, Renderer> {
+        self.state.view(bytes)
+    }
+}
+
+pub(crate) struct State<'a, Theme, Renderer> {
+    pub(crate) store: Rc<RefCell<Store<guest::State<'a, Theme, Renderer>>>>,
+    pub(crate) bindings: Rc<RefCell<Thawing>>,
+    pub(crate) table: Rc<RefCell<ResourceAny>>,
+}
+
+impl<'a, Theme, Renderer> State<'a, Theme, Renderer> {
+    fn new(
+        engine: &Engine,
+        linker: &Linker<guest::State<'a, Theme, Renderer>>,
+        binary_path: impl AsRef<Path>,
+    ) -> Self {
+        let component = Component::from_file(&engine, binary_path).unwrap();
+
         let mut store = Store::new(&engine, guest::State::new());
-        let bindings = Thawing::instantiate(&mut store, &component, &linker).unwrap();
+        let bindings = Thawing::instantiate(&mut store, &component, linker).unwrap();
 
         let table = bindings
             .thawing_core_guest()
@@ -177,22 +175,14 @@ where
         let bindings = Rc::new(RefCell::new(bindings));
         let table = Rc::new(RefCell::new(table));
 
-        store
-            .borrow_mut()
-            .data_mut()
-            .fill(store.clone(), bindings.clone(), table.clone());
-
         Self {
-            wasm: BinaryPath::UserProvided(wasm),
             store,
             bindings,
             table,
-            engine,
-            linker,
         }
     }
 
-    pub fn call<Message: serde::de::DeserializeOwned>(
+    pub(crate) fn call<Message: serde::de::DeserializeOwned>(
         &self,
         closure: u32,
         data: impl Into<Option<Bytes>>,
@@ -232,7 +222,43 @@ where
             .unwrap()
     }
 
-    pub fn view(&self, bytes: &Vec<u8>) -> Element<'a, guest::Message, Theme, Renderer> {
+    fn reload(
+        &mut self,
+        engine: &Engine,
+        linker: &Linker<guest::State<'a, Theme, Renderer>>,
+        binary_path: impl AsRef<Path>,
+    ) {
+        let component = Component::from_file(&engine, binary_path).unwrap();
+        let mut store = self.store.borrow_mut();
+        let mut bindings = self.bindings.borrow_mut();
+        *store = Store::new(&engine, guest::State::new());
+        *bindings = Thawing::instantiate(&mut *store, &component, &linker).unwrap();
+
+        let mut table = self.table.borrow_mut();
+
+        *table = bindings
+            .thawing_core_guest()
+            .table()
+            .call_constructor(&mut *store)
+            .unwrap();
+    }
+
+    fn fill_store(&mut self) {
+        self.store.borrow_mut().data_mut().runtime = Some(self.clone());
+    }
+}
+
+impl<'a, Theme, Renderer> State<'a, Theme, Renderer>
+where
+    Renderer: 'a + iced_core::Renderer + text::Renderer,
+    Theme: 'a
+        + serde::Serialize
+        + iced_widget::checkbox::Catalog
+        + iced_widget::button::Catalog
+        + iced_widget::text::Catalog,
+    <Theme as widget::text::Catalog>::Class<'a>: From<widget::text::StyleFn<'a, Theme>>,
+{
+    fn view(&self, bytes: &Vec<u8>) -> Element<'a, guest::Message, Theme, Renderer> {
         let mut store = self.store.borrow_mut();
         let mut table = self.table.borrow_mut();
         table.resource_drop(&mut *store).unwrap();
@@ -264,5 +290,15 @@ where
             .unwrap();
 
         store.data_mut().element.remove(&view.rep()).unwrap()
+    }
+}
+
+impl<'a, Theme, Renderer> Clone for State<'a, Theme, Renderer> {
+    fn clone(&self) -> Self {
+        Self {
+            store: self.store.clone(),
+            bindings: self.bindings.clone(),
+            table: self.table.clone(),
+        }
     }
 }

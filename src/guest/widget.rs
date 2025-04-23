@@ -253,23 +253,9 @@ where
     ) -> Resource<core::widget::Text> {
         let mut widget = self.get_widget::<Text<Theme, Renderer>, _>(&text);
 
-        let store = self.store.as_ref().unwrap().clone();
-        let bindings = self.bindings.as_ref().unwrap().clone();
-        let table = self.resource.as_ref().unwrap().clone();
-        widget = widget.style(move |theme| {
-            let bytes = bindings
-                .borrow_mut()
-                .thawing_core_guest()
-                .table()
-                .call_call_with(
-                    &mut *store.borrow_mut(),
-                    *table.borrow(),
-                    Resource::new_own(style_fn.rep()),
-                    &bincode::serialize(theme).unwrap(),
-                )
-                .unwrap();
-            bincode::deserialize(&bytes).unwrap()
-        });
+        let runtime = self.runtime.as_ref().unwrap().clone();
+        widget = widget
+            .style(move |theme| runtime.call(style_fn.rep(), bincode::serialize(theme).unwrap()));
 
         self.insert(text, widget)
     }

@@ -304,7 +304,8 @@ where
                     if let Some(state) = state.downcast_mut::<crate::Inner<Theme, Renderer>>() {
                         if let Runtime::None = &mut state.runtime {
                             let timer = std::time::Instant::now();
-                            let runtime = runtime::State::from_view(self.temp_dir.take().unwrap());
+                            let runtime =
+                                runtime::Runtime::from_view(self.temp_dir.take().unwrap());
                             let element = runtime.view(&state.bytes);
                             state.runtime = Runtime::Built { runtime, element };
                             state.invalidated = true;

@@ -1,22 +1,16 @@
 mod types;
 mod widget;
 
-use std::cell::RefCell;
 use std::collections::HashMap;
-use std::rc::Rc;
 
 use iced_core::{Element, Widget, element};
 use iced_widget::text;
-use wasmtime::Store;
-use wasmtime::component::{Resource, ResourceAny, ResourceTable};
+use wasmtime::component::{Resource, ResourceTable};
 
 use crate::runtime::thawing::core;
-use crate::runtime::{Bytes, Empty, Thawing};
+use crate::runtime::{self, Bytes, Empty};
 
 type Table<T> = HashMap<u32, T>;
-type StoreCell<'a, Theme, Renderer> = Rc<RefCell<Store<State<'a, Theme, Renderer>>>>;
-type BindingsCell = Rc<RefCell<Thawing>>;
-type ResourceCell = Rc<RefCell<ResourceAny>>;
 
 #[derive(Debug, Clone)]
 pub struct Message {
@@ -46,9 +40,7 @@ impl Message {
 pub(crate) struct State<'a, Theme, Renderer> {
     pub(crate) table: ResourceTable,
     pub(crate) element: Table<Element<'a, Message, Theme, Renderer>>,
-    pub(crate) store: Option<StoreCell<'a, Theme, Renderer>>,
-    pub(crate) bindings: Option<BindingsCell>,
-    pub(crate) resource: Option<ResourceCell>,
+    pub(crate) runtime: Option<runtime::State<'a, Theme, Renderer>>,
 }
 
 impl<'a, Theme, Renderer> State<'a, Theme, Renderer> {
@@ -56,21 +48,8 @@ impl<'a, Theme, Renderer> State<'a, Theme, Renderer> {
         Self {
             table: ResourceTable::new(),
             element: Table::new(),
-            store: None,
-            bindings: None,
-            resource: None,
+            runtime: None,
         }
-    }
-
-    pub(crate) fn fill(
-        &mut self,
-        store: StoreCell<'a, Theme, Renderer>,
-        bindings: BindingsCell,
-        table: ResourceCell,
-    ) {
-        self.store = Some(store);
-        self.bindings = Some(bindings);
-        self.resource = Some(table);
     }
 }
 

@@ -119,7 +119,7 @@ where
 enum Runtime<Theme, Renderer> {
     None,
     Built {
-        runtime: runtime::State<'static, Theme, Renderer>,
+        runtime: runtime::Runtime<'static, Theme, Renderer>,
         element: Element<'static, guest::Message, Theme, Renderer>,
     },
 }
@@ -145,7 +145,7 @@ where
     fn new(kind: &Kind, bytes: Arc<Vec<u8>>) -> Self {
         let runtime = match kind {
             Kind::ComponentFile(path) => {
-                let runtime = runtime::State::from_component(&path);
+                let runtime = runtime::Runtime::from_component(&path);
                 let element = runtime.view(&bytes);
 
                 Runtime::Built { runtime, element }
