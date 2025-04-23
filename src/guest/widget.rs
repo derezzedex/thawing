@@ -1,16 +1,16 @@
-use crate::runtime::{self, Guest, Message};
+use crate::guest;
+use crate::runtime::thawing::core;
 use core::types::{Color, Horizontal, Length, Padding, Pixels};
-use runtime::thawing::core;
 
 use iced_core::text;
 use wasmtime::component::Resource;
 
-pub type Column<'a, Theme, Renderer> = iced_widget::Column<'a, Message, Theme, Renderer>;
-pub type Button<'a, Theme, Renderer> = iced_widget::Button<'a, Message, Theme, Renderer>;
+pub type Column<'a, Theme, Renderer> = iced_widget::Column<'a, guest::Message, Theme, Renderer>;
+pub type Button<'a, Theme, Renderer> = iced_widget::Button<'a, guest::Message, Theme, Renderer>;
 pub type Text<'a, Theme, Renderer> = iced_widget::Text<'a, Theme, Renderer>;
-pub type Checkbox<'a, Theme, Renderer> = iced_widget::Checkbox<'a, Message, Theme, Renderer>;
+pub type Checkbox<'a, Theme, Renderer> = iced_widget::Checkbox<'a, guest::Message, Theme, Renderer>;
 
-impl<'a, Theme, Renderer> core::widget::HostCheckbox for Guest<'a, Theme, Renderer>
+impl<'a, Theme, Renderer> core::widget::HostCheckbox for guest::State<'a, Theme, Renderer>
 where
     Renderer: 'a + text::Renderer,
     Theme: 'a + iced_widget::checkbox::Catalog,
@@ -27,7 +27,7 @@ where
         closure: Resource<core::types::Closure>,
     ) -> Resource<core::widget::Checkbox> {
         let mut widget = self.get_widget::<Checkbox<Theme, Renderer>, _>(&checkbox);
-        widget = widget.on_toggle(move |value| Message::stateful(&closure, value));
+        widget = widget.on_toggle(move |value| guest::Message::stateful(&closure, value));
 
         self.insert(checkbox, widget)
     }
@@ -44,7 +44,7 @@ where
     }
 }
 
-impl<'a, Theme, Renderer> core::widget::HostButton for Guest<'a, Theme, Renderer>
+impl<'a, Theme, Renderer> core::widget::HostButton for guest::State<'a, Theme, Renderer>
 where
     Renderer: 'a + iced_core::Renderer,
     Theme: 'a + iced_widget::button::Catalog,
@@ -62,7 +62,7 @@ where
         closure: Resource<core::types::Closure>,
     ) -> Resource<core::widget::Button> {
         let mut widget = self.get_widget::<Button<Theme, Renderer>, _>(&button);
-        widget = widget.on_press_with(move || Message::stateless(&closure));
+        widget = widget.on_press_with(move || guest::Message::stateless(&closure));
 
         self.insert(button, widget)
     }
@@ -79,7 +79,7 @@ where
     }
 }
 
-impl<'a, Theme, Renderer> core::widget::HostColumn for Guest<'a, Theme, Renderer>
+impl<'a, Theme, Renderer> core::widget::HostColumn for guest::State<'a, Theme, Renderer>
 where
     Renderer: 'a + iced_core::Renderer,
     Theme: 'a,
@@ -225,7 +225,7 @@ where
     }
 }
 
-impl<'a, Theme, Renderer> core::widget::HostText for Guest<'a, Theme, Renderer>
+impl<'a, Theme, Renderer> core::widget::HostText for guest::State<'a, Theme, Renderer>
 where
     Renderer: 'a + text::Renderer,
     Theme: 'a + iced_widget::text::Catalog + serde::Serialize,

@@ -1,7 +1,6 @@
+mod guest;
 mod runtime;
 mod task;
-mod types;
-mod widget;
 
 use std::cell::OnceCell;
 use std::marker::PhantomData;
@@ -121,7 +120,7 @@ enum Runtime<Theme, Renderer> {
     None,
     Built {
         runtime: runtime::State<'static, Theme, Renderer>,
-        element: Element<'static, runtime::Message, Theme, Renderer>,
+        element: Element<'static, guest::Message, Theme, Renderer>,
     },
 }
 
