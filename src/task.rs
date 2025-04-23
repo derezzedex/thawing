@@ -159,7 +159,7 @@ fn parse_and_write(caller: impl AsRef<Path>, manifest: impl AsRef<Path>) -> Task
     let caller = caller.as_ref().to_path_buf();
     let target = manifest.as_ref().join("src").join("lib.rs");
 
-    let (tx, rx) = oneshot::channel::<(PathBuf, PathBuf)>();
+    let (tx, rx) = oneshot::channel::<(PathBuf, PathBuf, oneshot::Sender<()>)>();
 
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_io()
@@ -169,7 +169,7 @@ fn parse_and_write(caller: impl AsRef<Path>, manifest: impl AsRef<Path>) -> Task
     std::thread::spawn(move || {
         let local = task::LocalSet::new();
         local.spawn_local(async {
-            if let Ok((caller, target)) = rx.await {
+            if let Ok((caller, target, tx)) = rx.await {
                 let timer = std::time::Instant::now();
                 task::spawn_local(async move {
                     let content = fs::read_to_string(caller).await.unwrap();
@@ -205,12 +205,15 @@ fn parse_and_write(caller: impl AsRef<Path>, manifest: impl AsRef<Path>) -> Task
 
                     let content =
                         prettyplease::unparse(&syn::parse_file(&output.to_string()).unwrap());
-                    tracing::warn!("Wrote:\n{content}");
-                    let mut lib_file = fs::File::options().write(true).open(target).await.unwrap();
+                    tracing::info!("Wrote:\n{content}");
+                    let mut lib_file = fs::File::create(target).await.unwrap();
                     lib_file.write_all(content.as_bytes()).await.unwrap();
+                    lib_file.sync_data().await.unwrap();
                 })
                 .await
                 .unwrap();
+
+                tx.send(()).unwrap();
                 tracing::info!(
                     "Parsing and writing to `component` took {:?}",
                     timer.elapsed()
@@ -222,7 +225,9 @@ fn parse_and_write(caller: impl AsRef<Path>, manifest: impl AsRef<Path>) -> Task
     });
 
     Task::future(async move {
-        tx.send((caller, target)).unwrap();
+        let (send, response) = oneshot::channel::<()>();
+        tx.send((caller, target, send)).unwrap();
+        response.await.unwrap();
     })
 }
 
