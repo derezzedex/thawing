@@ -44,6 +44,7 @@ pub struct Thawing<'a, Message, Theme, Renderer, State = ()> {
     initial: Option<Element<'a, Message, Theme, Renderer>>,
     bytes: Arc<Vec<u8>>,
     tree: Mutex<OnceCell<Tree>>,
+    mapper: Option<Box<dyn Fn(guest::Message) -> Message + 'a>>,
 
     state: PhantomData<&'a State>,
     message: PhantomData<Message>,
@@ -62,6 +63,7 @@ impl<'a, Message, Theme, Renderer, State> Thawing<'a, Message, Theme, Renderer, 
             width: Length::Shrink,
             height: Length::Shrink,
             tree: Mutex::new(OnceCell::new()),
+            mapper: None,
             state: PhantomData,
             message: PhantomData,
         }
@@ -76,6 +78,7 @@ impl<'a, Message, Theme, Renderer, State> Thawing<'a, Message, Theme, Renderer, 
             width: Length::Shrink,
             height: Length::Shrink,
             tree: Mutex::new(OnceCell::new()),
+            mapper: None,
             state: PhantomData,
             message: PhantomData,
         }
@@ -388,7 +391,36 @@ where
         }
     }
 
-    // TODO(derezzedex): implement Widget::overlay
+    fn overlay<'b>(
+        &'b mut self,
+        tree: &'b mut Tree,
+        layout: Layout<'_>,
+        renderer: &Renderer,
+        translation: iced_core::Vector,
+    ) -> Option<iced_core::overlay::Element<'b, Message, Theme, Renderer>> {
+        let state = tree.state.downcast_mut::<Inner<Theme, Renderer>>();
+
+        match &mut state.runtime {
+            Runtime::None => self.initial.as_mut().unwrap().as_widget_mut().overlay(
+                &mut tree.children[0],
+                layout,
+                renderer,
+                translation,
+            ),
+            Runtime::Built { element, runtime } => {
+                let runtime = runtime.state();
+                self.mapper = Some(Box::new(move |message: guest::Message| {
+                    runtime.call(message.closure, message.data)
+                }));
+                let mapper = self.mapper.as_ref().unwrap();
+
+                element
+                    .as_widget_mut()
+                    .overlay(&mut tree.children[0], layout, renderer, translation)
+                    .map(move |overlay| overlay.map(mapper))
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

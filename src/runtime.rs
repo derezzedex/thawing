@@ -146,6 +146,10 @@ where
     pub fn view(&self, bytes: &Vec<u8>) -> Element<'a, guest::Message, Theme, Renderer> {
         self.state.view(bytes)
     }
+
+    pub(crate) fn state(&self) -> State<'a, Theme, Renderer> {
+        self.state.clone()
+    }
 }
 
 pub(crate) struct State<'a, Theme, Renderer> {
