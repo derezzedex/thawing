@@ -25,13 +25,13 @@ macro_rules! thaw {
             fn call(&self, c: guest::Closure) -> guest::Bytes {
                 let table = runtime::TABLE.lock().unwrap();
                 let closure = table.get(&c.id()).unwrap();
-                closure.call().downcast()
+                closure.call()
             }
 
             fn call_with(&self, c: guest::Closure, state: guest::Bytes) -> guest::Bytes {
                 let table = runtime::TABLE.lock().unwrap();
                 let closure = table.get(&c.id()).unwrap();
-                closure.call_with(runtime::AnyBox::new(state)).downcast()
+                closure.call_with(state)
             }
         }
 

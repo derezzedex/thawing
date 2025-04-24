@@ -1,25 +1,13 @@
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
 
-use crate::guest;
+use crate::guest::Bytes;
 
 pub static TABLE: LazyLock<Mutex<HashMap<u32, Closure>>> =
     LazyLock::new(|| Mutex::new(HashMap::default()));
 
-pub struct AnyBox(Box<dyn std::any::Any>);
-
-impl AnyBox {
-    pub fn new<T: 'static>(value: T) -> Self {
-        Self(Box::new(value))
-    }
-
-    pub fn downcast<T: 'static>(self) -> T {
-        *self.0.downcast::<T>().unwrap()
-    }
-}
-
 pub struct Closure {
-    func: Box<dyn Fn(AnyBox) -> AnyBox + Send>,
+    func: Box<dyn Fn(Bytes) -> Bytes + Send>,
 }
 
 impl Closure {
@@ -28,10 +16,9 @@ impl Closure {
         S: serde::de::DeserializeOwned + 'static,
         T: serde::Serialize + 'static,
     {
-        let wrapper = move |state: AnyBox| -> AnyBox {
-            let bytes = state.downcast::<guest::Bytes>();
+        let wrapper = move |bytes: Bytes| -> Bytes {
             let msg = func(bincode::deserialize(&bytes).unwrap());
-            AnyBox::new(bincode::serialize(&msg).unwrap())
+            bincode::serialize(&msg).unwrap()
         };
 
         Self {
@@ -44,10 +31,9 @@ impl Closure {
         S: serde::de::DeserializeOwned + 'static,
         T: serde::Serialize + 'static,
     {
-        let wrapper = move |state: AnyBox| -> AnyBox {
-            let bytes = state.downcast::<guest::Bytes>();
+        let wrapper = move |bytes: Bytes| -> Bytes {
             let msg = func(&bincode::deserialize(&bytes).unwrap());
-            AnyBox::new(bincode::serialize(&msg).unwrap())
+            bincode::serialize(&msg).unwrap()
         };
 
         Self {
@@ -59,19 +45,18 @@ impl Closure {
     where
         T: serde::Serialize + 'static,
     {
-        let wrapper =
-            move |_state: AnyBox| -> AnyBox { AnyBox::new(bincode::serialize(&func()).unwrap()) };
+        let wrapper = move |_state: Bytes| -> Bytes { bincode::serialize(&func()).unwrap() };
 
         Self {
             func: Box::new(wrapper),
         }
     }
 
-    pub fn call_with(&self, state: AnyBox) -> AnyBox {
+    pub fn call_with(&self, state: Bytes) -> Bytes {
         (self.func)(state)
     }
 
-    pub fn call(&self) -> AnyBox {
-        (self.func)(AnyBox::new(()))
+    pub fn call(&self) -> Bytes {
+        (self.func)(Vec::new())
     }
 }
