@@ -17,7 +17,8 @@ use proc_macro2::TokenStream;
 use quote::{ToTokens, quote};
 use syn::visit::{self, Visit};
 
-use crate::{Id, Kind, Runtime, runtime};
+use crate::runtime;
+use crate::widget::{Id, Inner, Kind, View};
 
 pub fn watcher<Theme, Renderer>(id: impl Into<Id> + Clone + Send + 'static) -> Task<()>
 where
@@ -83,7 +84,7 @@ fn fetch_widget_kind<Theme: Send + 'static, Renderer: Send + 'static>(id: Id) ->
         ) {
             match id {
                 Some(id) if id == &self.id => {
-                    if let Some(state) = state.downcast_mut::<crate::Inner<Theme, Renderer>>() {
+                    if let Some(state) = state.downcast_mut::<Inner<Theme, Renderer>>() {
                         self.kind = Some(state.kind.clone());
                         return;
                     }
@@ -174,13 +175,13 @@ fn parse_and_write(caller: impl AsRef<Path>, manifest: impl AsRef<Path>) -> Task
                 task::spawn_local(async move {
                     let content = fs::read_to_string(caller).await.unwrap();
                     let caller = syn::parse_file(&content).unwrap();
-                    let View {
+                    let ParsedFile {
                         data,
                         message,
                         state,
                         state_ty,
                         view,
-                    } = ViewBuilder::from_file(&caller).build();
+                    } = FileParser::from_file(&caller).build();
 
                     let output = quote! {
                         #![allow(unused_imports)]
@@ -306,13 +307,13 @@ where
         ) {
             match id {
                 Some(id) if id == &self.id => {
-                    if let Some(state) = state.downcast_mut::<crate::Inner<Theme, Renderer>>() {
-                        if let Runtime::None = &mut state.runtime {
+                    if let Some(state) = state.downcast_mut::<Inner<Theme, Renderer>>() {
+                        if let View::None = &mut state.view {
                             let timer = std::time::Instant::now();
                             let runtime =
                                 runtime::Runtime::from_view(self.temp_dir.take().unwrap());
                             let element = runtime.view(&state.bytes);
-                            state.runtime = Runtime::Built { runtime, element };
+                            state.view = View::Built { runtime, element };
                             state.invalidated = true;
                             tracing::info!("Building `runtime::State` took {:?}", timer.elapsed());
                         }
@@ -365,9 +366,9 @@ pub fn reload<Theme: Send + 'static, Renderer: Send + 'static>(
         ) {
             match id {
                 Some(id) if id == &self.id => {
-                    if let Some(state) = state.downcast_mut::<crate::Inner<Theme, Renderer>>() {
+                    if let Some(state) = state.downcast_mut::<Inner<Theme, Renderer>>() {
                         let timer = std::time::Instant::now();
-                        if let Runtime::Built { runtime, .. } = &mut state.runtime {
+                        if let View::Built { runtime, .. } = &mut state.view {
                             runtime.reload();
                         }
 
@@ -458,7 +459,7 @@ impl<'ast> quote::ToTokens for TypeDef<'ast> {
     }
 }
 
-struct ViewBuilder<'ast> {
+struct FileParser<'ast> {
     file: &'ast syn::File,
     view: Option<&'ast syn::Macro>,
     state_ty: Option<&'ast syn::Ident>,
@@ -466,7 +467,7 @@ struct ViewBuilder<'ast> {
     message: Option<TypeDef<'ast>>,
     data: Vec<TypeDef<'ast>>,
 }
-struct View {
+struct ParsedFile {
     view: TokenStream,
     state: TokenStream,
     state_ty: syn::Ident,
@@ -474,11 +475,11 @@ struct View {
     data: Vec<TokenStream>,
 }
 
-impl<'ast> ViewBuilder<'ast> {
-    fn build(mut self) -> View {
+impl<'ast> FileParser<'ast> {
+    fn build(mut self) -> ParsedFile {
         self.visit_file(&self.file);
 
-        View {
+        ParsedFile {
             data: self.data.iter().map(ToTokens::to_token_stream).collect(),
             view: self.view.unwrap().tokens.clone(),
             state: self.state.unwrap().to_token_stream(),
@@ -499,7 +500,7 @@ impl<'ast> ViewBuilder<'ast> {
     }
 }
 
-impl<'ast> Visit<'ast> for ViewBuilder<'ast> {
+impl<'ast> Visit<'ast> for FileParser<'ast> {
     fn visit_item_struct(&mut self, node: &'ast syn::ItemStruct) {
         for attr in node.attrs.iter() {
             if attr
