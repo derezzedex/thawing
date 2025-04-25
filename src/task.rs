@@ -20,7 +20,7 @@ use syn::visit::{self, Visit};
 use crate::runtime;
 use crate::widget::{Id, Inner, View};
 
-pub fn watcher<Theme, Renderer>(id: impl Into<Id> + Clone + Send + 'static) -> Task<()>
+pub fn watcher<Theme, Renderer>(id: impl Into<Id>) -> Task<()>
 where
     Renderer: 'static + Send + iced_core::Renderer + text::Renderer,
     Theme: 'static
@@ -34,27 +34,32 @@ where
 {
     let id = id.into();
 
-    fetch_caller_path::<Theme, Renderer>(id.clone()).then(move |target| {
+    fetch_caller_path::<Theme, Renderer>(&id).then(move |target| {
         let id = id.clone();
-        let temp_dir = tempfile::tempdir().unwrap();
-        let manifest = temp_dir.path().join("component");
 
-        init_directory(&manifest)
-            .chain(parse_and_write(&target, &manifest).chain(
-                build(&manifest).chain(create_runtime::<Theme, Renderer>(id.clone(), temp_dir)),
-            ))
-            .chain(Task::stream(watch_file(target.clone())).then(move |_| {
-                let manifest = manifest.clone();
-                let id = id.clone();
+        init_directory().then(move |manifest| {
+            let id = id.clone();
+            let caller = target.clone();
 
-                parse_and_write(&target, &manifest)
-                    .then(move |_| build(manifest.clone()))
-                    .then(move |_| reload::<Theme, Renderer>(id.clone()))
-            }))
+            parse_and_write(&caller, &manifest)
+                .then(build)
+                .then(move |manifest| create_runtime::<Theme, Renderer>(&id, manifest))
+                .then(move |(id, manifest)| {
+                    let caller = caller.clone();
+
+                    Task::stream(watch_file(caller.clone())).then(move |_| {
+                        let id = id.clone();
+
+                        parse_and_write(&caller, &manifest)
+                            .then(build)
+                            .then(move |_| reload::<Theme, Renderer>(id.clone()))
+                    })
+                })
+        })
     })
 }
 
-fn fetch_caller_path<Theme: Send + 'static, Renderer: Send + 'static>(id: Id) -> Task<PathBuf> {
+fn fetch_caller_path<Theme: Send + 'static, Renderer: Send + 'static>(id: &Id) -> Task<PathBuf> {
     struct GetPath<Theme, Renderer> {
         id: iced_core::widget::Id,
         path: Option<PathBuf>,
@@ -100,20 +105,23 @@ fn fetch_caller_path<Theme: Send + 'static, Renderer: Send + 'static>(id: Id) ->
     }
 
     task::widget(GetPath {
-        id: id.into(),
+        id: id.0.clone(),
         path: None,
         theme: PhantomData::<Theme>,
         renderer: PhantomData::<Renderer>,
     })
 }
 
-fn init_directory(path: impl AsRef<Path>) -> Task<()> {
+fn init_directory() -> Task<PathBuf> {
     use tokio::fs;
     use tokio::io::AsyncWriteExt;
 
-    let manifest = path.as_ref().to_path_buf();
-
     Task::future(async move {
+        let manifest = tempfile::tempdir()
+            .expect("Failed to create temporary directory")
+            .into_path()
+            .join("component");
+
         let timer = std::time::Instant::now();
         fs::create_dir(&manifest).await.unwrap();
 
@@ -138,16 +146,19 @@ fn init_directory(path: impl AsRef<Path>) -> Task<()> {
             .unwrap();
 
         tracing::info!("Creating `component` tempdir took {:?}", timer.elapsed());
+
+        manifest
     })
 }
 
-fn parse_and_write(caller: impl AsRef<Path>, manifest: impl AsRef<Path>) -> Task<()> {
+fn parse_and_write(caller: &PathBuf, manifest: &PathBuf) -> Task<PathBuf> {
     use tokio::io::AsyncWriteExt;
     use tokio::sync::oneshot;
     use tokio::{fs, task};
 
-    let caller = caller.as_ref().to_path_buf();
-    let target = manifest.as_ref().join("src").join("lib.rs");
+    let caller = caller.to_path_buf();
+    let manifest = manifest.to_path_buf();
+    let target = manifest.join("src").join("lib.rs");
 
     let (tx, rx) = oneshot::channel::<(PathBuf, PathBuf, oneshot::Sender<()>)>();
 
@@ -218,13 +229,13 @@ fn parse_and_write(caller: impl AsRef<Path>, manifest: impl AsRef<Path>) -> Task
         let (send, response) = oneshot::channel::<()>();
         tx.send((caller, target, send)).unwrap();
         response.await.unwrap();
+
+        manifest
     })
 }
 
-fn build(manifest: impl AsRef<Path>) -> Task<()> {
+fn build(manifest: PathBuf) -> Task<PathBuf> {
     use tokio::process::Command;
-
-    let manifest = manifest.as_ref().to_path_buf();
 
     Task::future(async move {
         let timer = std::time::Instant::now();
@@ -249,13 +260,12 @@ fn build(manifest: impl AsRef<Path>) -> Task<()> {
             "`cargo component` finished with {status:?} in {:?}",
             timer.elapsed()
         );
+
+        manifest
     })
 }
 
-fn create_runtime<Theme, Renderer>(
-    id: impl Into<Id> + Clone + Send + 'static,
-    temp_dir: tempfile::TempDir,
-) -> Task<()>
+fn create_runtime<Theme, Renderer>(id: &Id, manifest: PathBuf) -> Task<(Id, PathBuf)>
 where
     Renderer: 'static + Send + iced_core::Renderer + text::Renderer,
     Theme: 'static
@@ -267,16 +277,14 @@ where
     <Theme as iced_widget::text::Catalog>::Class<'static>:
         From<iced_widget::text::StyleFn<'static, Theme>>,
 {
-    let id = id.into();
-
-    struct Reload<Theme, Renderer> {
-        id: iced_core::widget::Id,
-        temp_dir: Option<tempfile::TempDir>,
+    struct CreateRuntime<Theme, Renderer> {
+        id: Id,
+        manifest: PathBuf,
         theme: PhantomData<Theme>,
         renderer: PhantomData<Renderer>,
     }
 
-    impl<Theme, Renderer> Operation for Reload<Theme, Renderer>
+    impl<Theme, Renderer> Operation<(Id, PathBuf)> for CreateRuntime<Theme, Renderer>
     where
         Renderer: 'static + Send + iced_core::Renderer + text::Renderer,
         Theme: 'static
@@ -295,12 +303,11 @@ where
             state: &mut dyn std::any::Any,
         ) {
             match id {
-                Some(id) if id == &self.id => {
+                Some(id) if id == &self.id.0 => {
                     if let Some(state) = state.downcast_mut::<Inner<Theme, Renderer>>() {
                         if let View::None = &mut state.view {
                             let timer = std::time::Instant::now();
-                            let runtime =
-                                runtime::Runtime::from_view(self.temp_dir.take().unwrap());
+                            let runtime = runtime::Runtime::new(&self.manifest);
                             let element = runtime.view(&state.bytes);
                             state.view = View::Built { runtime, element };
                             state.invalidated = true;
@@ -317,27 +324,25 @@ where
             &mut self,
             _id: Option<&iced_core::widget::Id>,
             _bounds: Rectangle,
-            operate_on_children: &mut dyn FnMut(&mut dyn Operation<()>),
+            operate_on_children: &mut dyn FnMut(&mut dyn Operation<(Id, PathBuf)>),
         ) {
             operate_on_children(self)
         }
 
-        fn finish(&self) -> operation::Outcome<()> {
-            operation::Outcome::Some(())
+        fn finish(&self) -> operation::Outcome<(Id, PathBuf)> {
+            operation::Outcome::Some((self.id.clone(), self.manifest.clone()))
         }
     }
 
-    task::widget(Reload {
-        id: id.into(),
-        temp_dir: Some(temp_dir),
+    task::widget(CreateRuntime {
+        id: id.clone(),
+        manifest: manifest.clone(),
         theme: PhantomData::<Theme>,
         renderer: PhantomData::<Renderer>,
     })
 }
 
-pub fn reload<Theme: Send + 'static, Renderer: Send + 'static>(
-    id: impl Into<Id> + Clone + Send + 'static,
-) -> Task<()> {
+pub fn reload<Theme: Send + 'static, Renderer: Send + 'static>(id: impl Into<Id>) -> Task<()> {
     let id = id.into();
 
     struct Reload<Theme, Renderer> {

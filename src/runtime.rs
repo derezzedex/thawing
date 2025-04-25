@@ -4,7 +4,6 @@ use std::rc::Rc;
 
 use iced_core::Element;
 use iced_core::{text, widget};
-use tempfile::TempDir;
 use wasmtime::component::{Component, Linker, Resource, ResourceAny};
 use wasmtime::{Engine, Store};
 
@@ -30,7 +29,6 @@ pub(crate) struct Runtime<'a, Theme, Renderer> {
     linker: Linker<guest::State<'a, Theme, Renderer>>,
     state: State<'a, Theme, Renderer>,
     binary_path: PathBuf,
-    _temp_dir: TempDir,
 }
 
 impl<'a, Theme, Renderer> Runtime<'a, Theme, Renderer> {
@@ -51,8 +49,7 @@ where
         + iced_widget::text::Catalog,
     <Theme as widget::text::Catalog>::Class<'a>: From<widget::text::StyleFn<'a, Theme>>,
 {
-    pub fn from_view(temp_dir: tempfile::TempDir) -> Self {
-        let manifest = temp_dir.path().join("component");
+    pub fn new(manifest: &PathBuf) -> Self {
         let binary_path = manifest
             .join("target")
             .join("wasm32-unknown-unknown")
@@ -71,7 +68,6 @@ where
             linker,
             state,
             binary_path,
-            _temp_dir: temp_dir,
         }
     }
 
