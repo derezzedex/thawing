@@ -4,6 +4,7 @@ use std::rc::Rc;
 
 use iced_core::Element;
 use iced_core::{text, widget};
+use tempfile::TempDir;
 use wasmtime::component::{Component, Linker, Resource, ResourceAny};
 use wasmtime::{Engine, Store};
 
@@ -24,34 +25,12 @@ wasmtime::component::bindgen!({
     },
 });
 
-enum BinaryPath {
-    Temporary {
-        _temp_dir: tempfile::TempDir,
-        path: PathBuf,
-    },
-    UserProvided(PathBuf),
-}
-
-impl BinaryPath {
-    fn temporary(_temp_dir: tempfile::TempDir, path: PathBuf) -> Self {
-        Self::Temporary { _temp_dir, path }
-    }
-}
-
-impl AsRef<Path> for BinaryPath {
-    fn as_ref(&self) -> &Path {
-        match self {
-            BinaryPath::Temporary { path, .. } => path,
-            BinaryPath::UserProvided(path) => path,
-        }
-    }
-}
-
 pub(crate) struct Runtime<'a, Theme, Renderer> {
     engine: Engine,
     linker: Linker<guest::State<'a, Theme, Renderer>>,
     state: State<'a, Theme, Renderer>,
-    binary_path: BinaryPath,
+    binary_path: PathBuf,
+    _temp_dir: TempDir,
 }
 
 impl<'a, Theme, Renderer> Runtime<'a, Theme, Renderer> {
@@ -74,7 +53,7 @@ where
 {
     pub fn from_view(temp_dir: tempfile::TempDir) -> Self {
         let manifest = temp_dir.path().join("component");
-        let wasm = manifest
+        let binary_path = manifest
             .join("target")
             .join("wasm32-unknown-unknown")
             .join("debug")
@@ -84,54 +63,15 @@ where
         let mut linker = Linker::new(&engine);
         Thawing::add_to_linker(&mut linker, |state| state).unwrap();
 
-        let mut state = State::new(&engine, &linker, &wasm);
+        let mut state = State::new(&engine, &linker, &binary_path);
         state.fill_store();
 
         Self {
             engine,
             linker,
             state,
-            binary_path: BinaryPath::temporary(temp_dir, wasm),
-        }
-    }
-
-    pub fn from_component(path: impl AsRef<Path>) -> Self {
-        let manifest = path.as_ref().to_path_buf();
-        let wasm = std::fs::read_dir(
-            manifest
-                .join("target")
-                .join("wasm32-unknown-unknown")
-                .join("debug"),
-        )
-        .unwrap()
-        .filter_map(Result::ok)
-        .filter(|dir| {
-            dir.file_type()
-                .ok()
-                .map(|kind| kind.is_file())
-                .unwrap_or(false)
-        })
-        .find(|dir| {
-            dir.path()
-                .extension()
-                .map(|ext| ext == "wasm")
-                .unwrap_or(false)
-        })
-        .unwrap()
-        .path();
-
-        let engine = Engine::default();
-        let mut linker = Linker::new(&engine);
-        Thawing::add_to_linker(&mut linker, |state| state).unwrap();
-
-        let mut state = State::new(&engine, &linker, &wasm);
-        state.fill_store();
-
-        Self {
-            engine,
-            linker,
-            state,
-            binary_path: BinaryPath::UserProvided(wasm),
+            binary_path,
+            _temp_dir: temp_dir,
         }
     }
 

@@ -14,18 +14,12 @@ use crate::guest;
 pub use id::Id;
 pub(crate) use state::{Inner, View};
 
-#[derive(Debug, Clone)]
-pub(crate) enum Kind {
-    ViewMacro(PathBuf),
-    ComponentFile(PathBuf),
-}
-
 pub struct Thawing<'a, Message, Theme, Renderer, State = ()> {
     id: Option<Id>,
     width: Length,
     height: Length,
 
-    kind: Kind,
+    caller: PathBuf,
     initial: Option<Element<'a, Message, Theme, Renderer>>,
     bytes: Arc<Vec<u8>>,
     tree: Mutex<OnceCell<Tree>>,
@@ -42,23 +36,8 @@ impl<'a, Message, Theme, Renderer, State> Thawing<'a, Message, Theme, Renderer, 
     ) -> Self {
         Self {
             id: None,
-            kind: Kind::ViewMacro(Path::new(file).canonicalize().unwrap()),
+            caller: Path::new(file).canonicalize().unwrap(),
             initial: Some(element.into()),
-            bytes: Arc::new(Vec::new()),
-            width: Length::Shrink,
-            height: Length::Shrink,
-            tree: Mutex::new(OnceCell::new()),
-            mapper: None,
-            state: PhantomData,
-            message: PhantomData,
-        }
-    }
-
-    pub fn from_component(path: impl AsRef<Path>) -> Self {
-        Self {
-            id: None,
-            kind: Kind::ComponentFile(path.as_ref().to_path_buf()),
-            initial: None,
             bytes: Arc::new(Vec::new()),
             width: Length::Shrink,
             height: Length::Shrink,
@@ -125,7 +104,7 @@ where
     }
 
     fn state(&self) -> tree::State {
-        let state: Inner<Theme, Renderer> = Inner::new(&self.kind, Arc::clone(&self.bytes));
+        let state: Inner<Theme, Renderer> = Inner::new(Arc::clone(&self.bytes), &self.caller);
         if let View::Built { element, .. } = &state.view {
             let _ = self.tree.lock().unwrap().set(Tree::new(element));
         }

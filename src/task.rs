@@ -18,7 +18,7 @@ use quote::{ToTokens, quote};
 use syn::visit::{self, Visit};
 
 use crate::runtime;
-use crate::widget::{Id, Inner, Kind, View};
+use crate::widget::{Id, Inner, View};
 
 pub fn watcher<Theme, Renderer>(id: impl Into<Id> + Clone + Send + 'static) -> Task<()>
 where
@@ -34,48 +34,37 @@ where
 {
     let id = id.into();
 
-    fetch_widget_kind::<Theme, Renderer>(id.clone()).then(move |kind| {
+    fetch_caller_path::<Theme, Renderer>(id.clone()).then(move |target| {
         let id = id.clone();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let manifest = temp_dir.path().join("component");
 
-        match kind {
-            Kind::ComponentFile(manifest) => reload::<Theme, Renderer>(id.clone()).chain(
-                Task::stream(watch_file(manifest.clone())).then(move |_| {
-                    build(manifest.clone()).chain(reload::<Theme, Renderer>(id.clone()))
-                }),
-            ),
-            Kind::ViewMacro(caller) => {
-                let temp_dir = tempfile::tempdir().unwrap();
-                let manifest = temp_dir.path().join("component");
+        init_directory(&manifest)
+            .chain(parse_and_write(&target, &manifest).chain(
+                build(&manifest).chain(create_runtime::<Theme, Renderer>(id.clone(), temp_dir)),
+            ))
+            .chain(Task::stream(watch_file(target.clone())).then(move |_| {
+                let manifest = manifest.clone();
+                let id = id.clone();
 
-                init_directory(&manifest)
-                    .chain(
-                        parse_and_write(&caller, &manifest).chain(
-                            build(&manifest)
-                                .chain(create_runtime::<Theme, Renderer>(id.clone(), temp_dir)),
-                        ),
-                    )
-                    .chain(Task::stream(watch_file(caller.clone())).then(move |_| {
-                        let manifest = manifest.clone();
-                        let id = id.clone();
-
-                        parse_and_write(&caller, &manifest)
-                            .then(move |_| build(manifest.clone()))
-                            .then(move |_| reload::<Theme, Renderer>(id.clone()))
-                    }))
-            }
-        }
+                parse_and_write(&target, &manifest)
+                    .then(move |_| build(manifest.clone()))
+                    .then(move |_| reload::<Theme, Renderer>(id.clone()))
+            }))
     })
 }
 
-fn fetch_widget_kind<Theme: Send + 'static, Renderer: Send + 'static>(id: Id) -> Task<Kind> {
+fn fetch_caller_path<Theme: Send + 'static, Renderer: Send + 'static>(id: Id) -> Task<PathBuf> {
     struct GetPath<Theme, Renderer> {
         id: iced_core::widget::Id,
-        kind: Option<Kind>,
+        path: Option<PathBuf>,
         theme: PhantomData<Theme>,
         renderer: PhantomData<Renderer>,
     }
 
-    impl<Theme: Send + 'static, Renderer: Send + 'static> Operation<Kind> for GetPath<Theme, Renderer> {
+    impl<Theme: Send + 'static, Renderer: Send + 'static> Operation<PathBuf>
+        for GetPath<Theme, Renderer>
+    {
         fn custom(
             &mut self,
             id: Option<&iced_core::widget::Id>,
@@ -85,7 +74,7 @@ fn fetch_widget_kind<Theme: Send + 'static, Renderer: Send + 'static>(id: Id) ->
             match id {
                 Some(id) if id == &self.id => {
                     if let Some(state) = state.downcast_mut::<Inner<Theme, Renderer>>() {
-                        self.kind = Some(state.kind.clone());
+                        self.path = Some(state.caller.clone());
                         return;
                     }
                 }
@@ -97,13 +86,13 @@ fn fetch_widget_kind<Theme: Send + 'static, Renderer: Send + 'static>(id: Id) ->
             &mut self,
             _id: Option<&iced_core::widget::Id>,
             _bounds: Rectangle,
-            operate_on_children: &mut dyn FnMut(&mut dyn Operation<Kind>),
+            operate_on_children: &mut dyn FnMut(&mut dyn Operation<PathBuf>),
         ) {
             operate_on_children(self)
         }
 
-        fn finish(&self) -> operation::Outcome<Kind> {
-            self.kind
+        fn finish(&self) -> operation::Outcome<PathBuf> {
+            self.path
                 .clone()
                 .map(operation::Outcome::Some)
                 .unwrap_or(operation::Outcome::None)
@@ -112,7 +101,7 @@ fn fetch_widget_kind<Theme: Send + 'static, Renderer: Send + 'static>(id: Id) ->
 
     task::widget(GetPath {
         id: id.into(),
-        kind: None,
+        path: None,
         theme: PhantomData::<Theme>,
         renderer: PhantomData::<Renderer>,
     })

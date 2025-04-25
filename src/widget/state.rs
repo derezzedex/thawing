@@ -1,9 +1,9 @@
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use iced_core::Element;
 use iced_core::text;
 
-use crate::widget::Kind;
 use crate::{guest, runtime};
 
 pub(crate) enum View<Theme, Renderer> {
@@ -18,7 +18,7 @@ pub(crate) struct Inner<Theme, Renderer> {
     pub(crate) view: View<Theme, Renderer>,
     pub(crate) invalidated: bool,
     pub(crate) bytes: Arc<Vec<u8>>,
-    pub(crate) kind: Kind,
+    pub(crate) caller: PathBuf,
 }
 
 impl<Theme, Renderer> Inner<Theme, Renderer>
@@ -32,22 +32,14 @@ where
     <Theme as iced_widget::text::Catalog>::Class<'static>:
         From<iced_widget::text::StyleFn<'static, Theme>>,
 {
-    pub(crate) fn new(kind: &Kind, bytes: Arc<Vec<u8>>) -> Self {
-        let runtime = match kind {
-            Kind::ComponentFile(path) => {
-                let runtime = runtime::Runtime::from_component(&path);
-                let element = runtime.view(&bytes);
-
-                View::Built { runtime, element }
-            }
-            Kind::ViewMacro(_) => View::None,
-        };
+    pub(crate) fn new(bytes: Arc<Vec<u8>>, caller: &PathBuf) -> Self {
+        let caller = caller.clone();
 
         Self {
-            view: runtime,
+            view: View::None,
             invalidated: false,
-            kind: kind.clone(),
             bytes,
+            caller,
         }
     }
 
