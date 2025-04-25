@@ -1,10 +1,9 @@
 mod id;
 mod state;
 
-use std::cell::OnceCell;
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use iced_core::widget::{Operation, Tree, tree};
 use iced_core::{Clipboard, Element, Event, Layout, Length, Rectangle, Shell, Size, Widget};
@@ -20,13 +19,11 @@ pub struct Thawing<'a, Message, Theme, Renderer, State = ()> {
     height: Length,
 
     caller: PathBuf,
-    initial: Option<Element<'a, Message, Theme, Renderer>>,
+    initial: Element<'a, Message, Theme, Renderer>,
     bytes: Arc<Vec<u8>>,
-    tree: Mutex<OnceCell<Tree>>,
     mapper: Option<Box<dyn Fn(guest::Message) -> Message + 'a>>,
 
     state: PhantomData<&'a State>,
-    message: PhantomData<Message>,
 }
 
 impl<'a, Message, Theme, Renderer, State> Thawing<'a, Message, Theme, Renderer, State> {
@@ -37,14 +34,12 @@ impl<'a, Message, Theme, Renderer, State> Thawing<'a, Message, Theme, Renderer, 
         Self {
             id: None,
             caller: Path::new(file).canonicalize().unwrap(),
-            initial: Some(element.into()),
+            initial: element.into(),
             bytes: Arc::new(Vec::new()),
             width: Length::Shrink,
             height: Length::Shrink,
-            tree: Mutex::new(OnceCell::new()),
             mapper: None,
             state: PhantomData,
-            message: PhantomData,
         }
     }
 
@@ -105,17 +100,11 @@ where
 
     fn state(&self) -> tree::State {
         let state: Inner<Theme, Renderer> = Inner::new(Arc::clone(&self.bytes), &self.caller);
-        if let View::Built { element, .. } = &state.view {
-            let _ = self.tree.lock().unwrap().set(Tree::new(element));
-        }
         tree::State::new(state)
     }
 
     fn children(&self) -> Vec<Tree> {
-        self.initial
-            .as_ref()
-            .map(|el| el.as_widget().children())
-            .unwrap_or_else(|| vec![self.tree.lock().unwrap().take().unwrap()])
+        self.initial.as_widget().children()
     }
 
     fn diff(&self, tree: &mut Tree) {
@@ -123,12 +112,7 @@ where
         state.diff(&self.bytes);
 
         match &state.view {
-            View::None => self
-                .initial
-                .as_ref()
-                .unwrap()
-                .as_widget()
-                .diff(&mut tree.children[0]),
+            View::None => self.initial.as_widget().diff(&mut tree.children[0]),
             View::Built { element, .. } => element.as_widget().diff(&mut tree.children[0]),
         }
     }
@@ -146,11 +130,10 @@ where
         let state = tree.state.downcast_ref::<Inner<Theme, Renderer>>();
 
         match &state.view {
-            View::None => self.initial.as_ref().unwrap().as_widget().layout(
-                &mut tree.children[0],
-                renderer,
-                limits,
-            ),
+            View::None => self
+                .initial
+                .as_widget()
+                .layout(&mut tree.children[0], renderer, limits),
             View::Built { element, .. } => {
                 element
                     .as_widget()
@@ -171,12 +154,11 @@ where
 
         operation.custom(id, layout.bounds(), state);
         operation.container(id, layout.bounds(), &mut |operation| match &state.view {
-            View::None => self.initial.as_ref().unwrap().as_widget().operate(
-                &mut tree.children[0],
-                layout,
-                renderer,
-                operation,
-            ),
+            View::None => {
+                self.initial
+                    .as_widget()
+                    .operate(&mut tree.children[0], layout, renderer, operation)
+            }
             View::Built { element, .. } => {
                 element
                     .as_widget()
@@ -204,7 +186,7 @@ where
         }
 
         match &mut state.view {
-            View::None => self.initial.as_mut().unwrap().as_widget_mut().update(
+            View::None => self.initial.as_widget_mut().update(
                 &mut tree.children[0],
                 event,
                 layout,
@@ -247,12 +229,13 @@ where
         let state = tree.state.downcast_ref::<Inner<Theme, Renderer>>();
 
         match &state.view {
-            View::None => self
-                .initial
-                .as_ref()
-                .unwrap()
-                .as_widget()
-                .mouse_interaction(&tree.children[0], layout, cursor, viewport, renderer),
+            View::None => self.initial.as_widget().mouse_interaction(
+                &tree.children[0],
+                layout,
+                cursor,
+                viewport,
+                renderer,
+            ),
             View::Built { element, .. } => element.as_widget().mouse_interaction(
                 &tree.children[0],
                 layout,
@@ -276,7 +259,7 @@ where
         let state = tree.state.downcast_ref::<Inner<Theme, Renderer>>();
 
         match &state.view {
-            View::None => self.initial.as_ref().unwrap().as_widget().draw(
+            View::None => self.initial.as_widget().draw(
                 &tree.children[0],
                 renderer,
                 theme,
@@ -307,7 +290,7 @@ where
         let state = tree.state.downcast_mut::<Inner<Theme, Renderer>>();
 
         match &mut state.view {
-            View::None => self.initial.as_mut().unwrap().as_widget_mut().overlay(
+            View::None => self.initial.as_widget_mut().overlay(
                 &mut tree.children[0],
                 layout,
                 renderer,
