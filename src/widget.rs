@@ -20,6 +20,7 @@ pub struct Thawing<'a, Message, Theme, Renderer, State = ()> {
 
     caller: PathBuf,
     initial: Element<'a, Message, Theme, Renderer>,
+    failed: Option<Element<'a, Message, Theme, Renderer>>,
     bytes: Arc<Vec<u8>>,
     mapper: Option<Box<dyn Fn(guest::Message) -> Message + 'a>>,
 
@@ -35,6 +36,7 @@ impl<'a, Message, Theme, Renderer, State> Thawing<'a, Message, Theme, Renderer, 
             id: None,
             caller: Path::new(file).canonicalize().unwrap(),
             initial: element.into(),
+            failed: None,
             bytes: Arc::new(Vec::new()),
             width: Length::Shrink,
             height: Length::Shrink,
@@ -112,6 +114,12 @@ where
         state.diff(&self.bytes);
 
         match &state.view {
+            View::Failed(error)
+            | View::Built {
+                error: Some(error), ..
+            } => failed::<'_, Message, Theme, Renderer>(error)
+                .as_widget()
+                .diff(&mut tree.children[0]),
             View::None => self.initial.as_widget().diff(&mut tree.children[0]),
             View::Built { element, .. } => element.as_widget().diff(&mut tree.children[0]),
         }
@@ -130,6 +138,12 @@ where
         let state = tree.state.downcast_ref::<Inner<Theme, Renderer>>();
 
         match &state.view {
+            View::Failed(error)
+            | View::Built {
+                error: Some(error), ..
+            } => failed::<'_, Message, Theme, Renderer>(error)
+                .as_widget()
+                .layout(&mut tree.children[0], renderer, limits),
             View::None => self
                 .initial
                 .as_widget()
@@ -154,6 +168,12 @@ where
 
         operation.custom(id, layout.bounds(), state);
         operation.container(id, layout.bounds(), &mut |operation| match &state.view {
+            View::Failed(error)
+            | View::Built {
+                error: Some(error), ..
+            } => failed::<'_, Message, Theme, Renderer>(error)
+                .as_widget()
+                .operate(&mut tree.children[0], layout, renderer, operation),
             View::None => {
                 self.initial
                     .as_widget()
@@ -186,6 +206,21 @@ where
         }
 
         match &mut state.view {
+            View::Failed(error)
+            | View::Built {
+                error: Some(error), ..
+            } => failed::<'_, Message, Theme, Renderer>(error)
+                .as_widget_mut()
+                .update(
+                    &mut tree.children[0],
+                    event,
+                    layout,
+                    cursor,
+                    renderer,
+                    clipboard,
+                    shell,
+                    viewport,
+                ),
             View::None => self.initial.as_widget_mut().update(
                 &mut tree.children[0],
                 event,
@@ -196,7 +231,9 @@ where
                 shell,
                 viewport,
             ),
-            View::Built { element, runtime } => {
+            View::Built {
+                element, runtime, ..
+            } => {
                 let mut messages = vec![];
                 let mut guest = Shell::new(&mut messages);
 
@@ -229,6 +266,12 @@ where
         let state = tree.state.downcast_ref::<Inner<Theme, Renderer>>();
 
         match &state.view {
+            View::Failed(error)
+            | View::Built {
+                error: Some(error), ..
+            } => failed::<'_, Message, Theme, Renderer>(error)
+                .as_widget()
+                .mouse_interaction(&tree.children[0], layout, cursor, viewport, renderer),
             View::None => self.initial.as_widget().mouse_interaction(
                 &tree.children[0],
                 layout,
@@ -259,6 +302,20 @@ where
         let state = tree.state.downcast_ref::<Inner<Theme, Renderer>>();
 
         match &state.view {
+            View::Failed(error)
+            | View::Built {
+                error: Some(error), ..
+            } => failed::<'_, Message, Theme, Renderer>(error)
+                .as_widget()
+                .draw(
+                    &tree.children[0],
+                    renderer,
+                    theme,
+                    style,
+                    layout,
+                    cursor,
+                    viewport,
+                ),
             View::None => self.initial.as_widget().draw(
                 &tree.children[0],
                 renderer,
@@ -290,13 +347,27 @@ where
         let state = tree.state.downcast_mut::<Inner<Theme, Renderer>>();
 
         match &mut state.view {
+            View::Failed(error)
+            | View::Built {
+                error: Some(error), ..
+            } => {
+                self.failed = Some(failed::<'_, Message, Theme, Renderer>(error));
+                self.failed.as_mut().unwrap().as_widget_mut().overlay(
+                    &mut tree.children[0],
+                    layout,
+                    renderer,
+                    translation,
+                )
+            }
             View::None => self.initial.as_widget_mut().overlay(
                 &mut tree.children[0],
                 layout,
                 renderer,
                 translation,
             ),
-            View::Built { element, runtime } => {
+            View::Built {
+                element, runtime, ..
+            } => {
                 let runtime = runtime.state();
                 self.mapper = Some(Box::new(move |message: guest::Message| {
                     runtime.call(message.closure, message.data)
@@ -310,4 +381,14 @@ where
             }
         }
     }
+}
+
+fn failed<'a, Message, Theme, Renderer>(
+    text: impl ToString,
+) -> Element<'a, Message, Theme, Renderer>
+where
+    Renderer: iced_core::text::Renderer + 'a,
+    Theme: iced_widget::text::Catalog + 'a,
+{
+    iced_widget::text(text.to_string()).size(12).into()
 }

@@ -41,7 +41,7 @@ where
             let id = id.clone();
             let caller = target.clone();
 
-            parse_and_write(&caller, &manifest)
+            parse_and_write(&caller, manifest)
                 .then(build)
                 .then(move |manifest| create_runtime::<Theme, Renderer>(&id, manifest))
                 .then(move |(id, manifest)| {
@@ -50,9 +50,9 @@ where
                     Task::stream(watch_file(caller.clone())).then(move |_| {
                         let id = id.clone();
 
-                        parse_and_write(&caller, &manifest)
-                            .then(build)
-                            .then(move |_| reload::<Theme, Renderer>(id.clone()))
+                        parse_and_write(&caller, manifest.clone()).then(build).then(
+                            move |manifest| reload::<Theme, Renderer>(id.clone(), manifest.err()),
+                        )
                     })
                 })
         })
@@ -112,134 +112,148 @@ fn fetch_caller_path<Theme: Send + 'static, Renderer: Send + 'static>(id: &Id) -
     })
 }
 
-fn init_directory() -> Task<PathBuf> {
+fn init_directory() -> Task<Result<PathBuf, crate::Error>> {
     use tokio::fs;
     use tokio::io::AsyncWriteExt;
 
     Task::future(async move {
-        let manifest = tempfile::tempdir()
-            .expect("Failed to create temporary directory")
-            .into_path()
-            .join("component");
+        let manifest = tempfile::tempdir()?.into_path().join("component");
 
         let timer = std::time::Instant::now();
-        fs::create_dir(&manifest).await.unwrap();
+        fs::create_dir(&manifest).await?;
 
         let src_path = manifest.join("src");
-        fs::create_dir(&src_path).await.unwrap();
+        fs::create_dir(&src_path).await?;
 
         let target_path = manifest.join("target");
-        fs::create_dir(&target_path).await.unwrap();
+        fs::create_dir(&target_path).await?;
 
-        fs::File::create(src_path.join("lib.rs")).await.unwrap();
+        fs::File::create(src_path.join("lib.rs")).await?;
 
-        let mut toml_file = fs::File::create(manifest.join("Cargo.toml")).await.unwrap();
-        toml_file
-            .write_all(COMPONENT_TOML.as_bytes())
-            .await
-            .unwrap();
+        let mut toml_file = fs::File::create(manifest.join("Cargo.toml")).await?;
+        toml_file.write_all(COMPONENT_TOML.as_bytes()).await?;
 
         let mut gitignore_file = fs::File::create(manifest.join(".gitignore")).await.unwrap();
         gitignore_file
             .write_all(COMPONENT_GITIGNORE.as_bytes())
-            .await
-            .unwrap();
+            .await?;
 
         tracing::info!("Creating `component` tempdir took {:?}", timer.elapsed());
 
-        manifest
+        Ok(manifest)
     })
 }
 
-fn parse_and_write(caller: &PathBuf, manifest: &PathBuf) -> Task<PathBuf> {
+fn parse_and_write(
+    caller: &PathBuf,
+    manifest: Result<PathBuf, crate::Error>,
+) -> Task<Result<PathBuf, crate::Error>> {
     use tokio::io::AsyncWriteExt;
     use tokio::sync::oneshot;
     use tokio::{fs, task};
 
-    let caller = caller.to_path_buf();
-    let manifest = manifest.to_path_buf();
-    let target = manifest.join("src").join("lib.rs");
+    let manifest = match manifest {
+        Err(error) => return Task::done(Err(error)),
+        Ok(manifest) => manifest.to_path_buf(),
+    };
 
-    let (tx, rx) = oneshot::channel::<(PathBuf, PathBuf, oneshot::Sender<()>)>();
+    let caller = caller.to_path_buf();
+    let target = manifest.join("src").join("lib.rs");
 
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_io()
-        .build()
-        .unwrap();
+        .build();
 
-    std::thread::spawn(move || {
-        let local = task::LocalSet::new();
-        local.spawn_local(async {
-            if let Ok((caller, target, tx)) = rx.await {
-                let timer = std::time::Instant::now();
-                task::spawn_local(async move {
-                    let content = fs::read_to_string(caller).await.unwrap();
-                    let caller = syn::parse_file(&content).unwrap();
-                    let ParsedFile {
-                        data,
-                        message,
-                        state,
-                        state_ty,
-                        view,
-                    } = FileParser::from_file(&caller).build();
+    match rt {
+        Err(error) => Task::done(Err(error.into())),
+        Ok(rt) => {
+            let (tx, rx) =
+                oneshot::channel::<(PathBuf, PathBuf, oneshot::Sender<Result<(), crate::Error>>)>();
 
-                    let output = quote! {
-                        #![allow(unused_imports)]
-                        use thawing_guest::thawing;
-                        use thawing_guest::widget::{button, checkbox, column, text, Style};
-                        use thawing_guest::{Application, Center, Element, Color, Theme, color};
+            std::thread::spawn(move || {
+                let local = task::LocalSet::new();
+                local.spawn_local(async {
+                    let (caller, target, tx) =
+                        rx.await.expect("Failed to recv over `oneshot` channel");
 
-                        #(#data)*
+                    let timer = std::time::Instant::now();
+                    let output = task::spawn_local(async move {
+                        let content = fs::read_to_string(caller).await.unwrap();
+                        let caller = syn::parse_file(&content).unwrap();
+                        let ParsedFile {
+                            data,
+                            message,
+                            state,
+                            state_ty,
+                            view,
+                        } = FileParser::from_file(&caller).build();
 
-                        #message
+                        let output = quote! {
+                            #![allow(unused_imports)]
+                            use thawing_guest::thawing;
+                            use thawing_guest::widget::{button, checkbox, column, text, Style};
+                            use thawing_guest::{Application, Center, Element, Color, Theme, color};
 
-                        #state
+                            #(#data)*
 
-                        impl Application for #state_ty {
-                            fn view(&self) -> impl Into<Element> {
-                                #view
+                            #message
+
+                            #state
+
+                            impl Application for #state_ty {
+                                fn view(&self) -> impl Into<Element> {
+                                    #view
+                                }
                             }
-                        }
 
-                        thawing_guest::thaw!(#state_ty);
-                    };
+                            thawing_guest::thaw!(#state_ty);
+                        };
 
-                    let content =
-                        prettyplease::unparse(&syn::parse_file(&output.to_string()).unwrap());
-                    tracing::info!("Wrote:\n{content}");
-                    let mut lib_file = fs::File::create(target).await.unwrap();
-                    lib_file.write_all(content.as_bytes()).await.unwrap();
-                    lib_file.sync_data().await.unwrap();
-                })
-                .await
-                .unwrap();
+                        let content =
+                            prettyplease::unparse(&syn::parse_file(&output.to_string()).unwrap());
+                        tracing::info!("Wrote:\n{content}");
+                        let mut lib_file = fs::File::create(target).await.unwrap();
+                        lib_file.write_all(content.as_bytes()).await.unwrap();
+                        lib_file.sync_data().await.unwrap();
+                    })
+                    .await
+                    .map_err(crate::Error::from);
 
-                tx.send(()).unwrap();
-                tracing::info!(
-                    "Parsing and writing to `component` took {:?}",
-                    timer.elapsed()
-                );
-            }
-        });
+                    tx.send(output)
+                        .expect("Failed to send over `oneshot` channel");
 
-        rt.block_on(local);
-    });
+                    tracing::info!(
+                        "Parsing and writing to `component` took {:?}",
+                        timer.elapsed()
+                    );
+                });
 
-    Task::future(async move {
-        let (send, response) = oneshot::channel::<()>();
-        tx.send((caller, target, send)).unwrap();
-        response.await.unwrap();
+                rt.block_on(local);
+            });
 
-        manifest
-    })
+            Task::future(async move {
+                let (send, response) = oneshot::channel::<Result<(), crate::Error>>();
+                tx.send((caller, target, send))
+                    .map_err(|_| crate::Error::SendFailed)?;
+                response.await.map_err(|_| crate::Error::RecvFailed)??;
+
+                Ok(manifest)
+            })
+        }
+    }
 }
 
-fn build(manifest: PathBuf) -> Task<PathBuf> {
+fn build(manifest: Result<PathBuf, crate::Error>) -> Task<Result<PathBuf, crate::Error>> {
     use tokio::process::Command;
+
+    let manifest = match manifest {
+        Err(error) => return Task::done(Err(error)),
+        Ok(manifest) => manifest.to_path_buf(),
+    };
 
     Task::future(async move {
         let timer = std::time::Instant::now();
-        let status = Command::new("cargo")
+        let output = Command::new("cargo")
             .args([
                 "component",
                 "build",
@@ -250,22 +264,30 @@ fn build(manifest: PathBuf) -> Task<PathBuf> {
             ])
             .current_dir(&manifest)
             .stdin(Stdio::null())
-            .spawn()
-            .expect("Failed to spawn compile command")
-            .wait()
-            .await
-            .unwrap();
+            .stderr(Stdio::piped())
+            .spawn()?
+            .wait_with_output()
+            .await?;
 
         tracing::info!(
-            "`cargo component` finished with {status:?} in {:?}",
+            "`cargo component` finished with {:?} in {:?}",
+            output.status,
             timer.elapsed()
         );
 
-        manifest
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(crate::Error::CargoComponent(stderr.to_string()));
+        }
+
+        Ok(manifest)
     })
 }
 
-fn create_runtime<Theme, Renderer>(id: &Id, manifest: PathBuf) -> Task<(Id, PathBuf)>
+fn create_runtime<Theme, Renderer>(
+    id: &Id,
+    manifest: Result<PathBuf, crate::Error>,
+) -> Task<(Id, Result<PathBuf, crate::Error>)>
 where
     Renderer: 'static + Send + iced_core::Renderer + text::Renderer,
     Theme: 'static
@@ -279,12 +301,13 @@ where
 {
     struct CreateRuntime<Theme, Renderer> {
         id: Id,
-        manifest: PathBuf,
+        manifest: Result<PathBuf, crate::Error>,
         theme: PhantomData<Theme>,
         renderer: PhantomData<Renderer>,
     }
 
-    impl<Theme, Renderer> Operation<(Id, PathBuf)> for CreateRuntime<Theme, Renderer>
+    impl<Theme, Renderer> Operation<(Id, Result<PathBuf, crate::Error>)>
+        for CreateRuntime<Theme, Renderer>
     where
         Renderer: 'static + Send + iced_core::Renderer + text::Renderer,
         Theme: 'static
@@ -305,13 +328,28 @@ where
             match id {
                 Some(id) if id == &self.id.0 => {
                     if let Some(state) = state.downcast_mut::<Inner<Theme, Renderer>>() {
-                        if let View::None = &mut state.view {
-                            let timer = std::time::Instant::now();
-                            let runtime = runtime::Runtime::new(&self.manifest);
-                            let element = runtime.view(&state.bytes);
-                            state.view = View::Built { runtime, element };
-                            state.invalidated = true;
-                            tracing::info!("Building `runtime::State` took {:?}", timer.elapsed());
+                        if let View::None | View::Failed(_) = &mut state.view {
+                            match &self.manifest {
+                                Err(error) => {
+                                    state.view = View::Failed(error.clone());
+                                    tracing::error!("Failed to create runtime {error:?}")
+                                }
+                                Ok(manifest) => {
+                                    let timer = std::time::Instant::now();
+                                    let runtime = runtime::Runtime::new(manifest);
+                                    let element = runtime.view(&state.bytes);
+                                    state.view = View::Built {
+                                        runtime,
+                                        element,
+                                        error: None,
+                                    };
+                                    state.invalidated = true;
+                                    tracing::info!(
+                                        "Building `runtime::State` took {:?}",
+                                        timer.elapsed()
+                                    );
+                                }
+                            }
                         }
                     }
                     return;
@@ -324,29 +362,35 @@ where
             &mut self,
             _id: Option<&iced_core::widget::Id>,
             _bounds: Rectangle,
-            operate_on_children: &mut dyn FnMut(&mut dyn Operation<(Id, PathBuf)>),
+            operate_on_children: &mut dyn FnMut(
+                &mut dyn Operation<(Id, Result<PathBuf, crate::Error>)>,
+            ),
         ) {
             operate_on_children(self)
         }
 
-        fn finish(&self) -> operation::Outcome<(Id, PathBuf)> {
+        fn finish(&self) -> operation::Outcome<(Id, Result<PathBuf, crate::Error>)> {
             operation::Outcome::Some((self.id.clone(), self.manifest.clone()))
         }
     }
 
     task::widget(CreateRuntime {
         id: id.clone(),
-        manifest: manifest.clone(),
+        manifest,
         theme: PhantomData::<Theme>,
         renderer: PhantomData::<Renderer>,
     })
 }
 
-pub fn reload<Theme: Send + 'static, Renderer: Send + 'static>(id: impl Into<Id>) -> Task<()> {
+pub fn reload<Theme: Send + 'static, Renderer: Send + 'static>(
+    id: impl Into<Id>,
+    error: Option<crate::Error>,
+) -> Task<()> {
     let id = id.into();
 
     struct Reload<Theme, Renderer> {
         id: iced_core::widget::Id,
+        error: Option<crate::Error>,
         theme: PhantomData<Theme>,
         renderer: PhantomData<Renderer>,
     }
@@ -362,12 +406,21 @@ pub fn reload<Theme: Send + 'static, Renderer: Send + 'static>(id: impl Into<Id>
                 Some(id) if id == &self.id => {
                     if let Some(state) = state.downcast_mut::<Inner<Theme, Renderer>>() {
                         let timer = std::time::Instant::now();
-                        if let View::Built { runtime, .. } = &mut state.view {
-                            runtime.reload();
-                        }
+                        if let View::Built {
+                            runtime,
+                            error: current_error,
+                            ..
+                        } = &mut state.view
+                        {
+                            *current_error = self.error.clone();
+                            if self.error.is_some() {
+                                return;
+                            }
 
-                        state.invalidated = true;
-                        tracing::info!("Reloaded in {:?}", timer.elapsed());
+                            runtime.reload();
+                            state.invalidated = true;
+                            tracing::info!("Reloaded in {:?}", timer.elapsed());
+                        }
                     }
                     return;
                 }
@@ -391,6 +444,7 @@ pub fn reload<Theme: Send + 'static, Renderer: Send + 'static>(id: impl Into<Id>
 
     task::widget(Reload {
         id: id.into(),
+        error,
         theme: PhantomData::<Theme>,
         renderer: PhantomData::<Renderer>,
     })

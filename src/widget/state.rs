@@ -8,9 +8,11 @@ use crate::{guest, runtime};
 
 pub(crate) enum View<Theme, Renderer> {
     None,
+    Failed(crate::Error),
     Built {
         runtime: runtime::Runtime<'static, Theme, Renderer>,
         element: Element<'static, guest::Message, Theme, Renderer>,
+        error: Option<crate::Error>,
     },
 }
 
@@ -48,7 +50,10 @@ where
             return;
         }
 
-        if let View::Built { runtime, element } = &mut self.view {
+        if let View::Built {
+            runtime, element, ..
+        } = &mut self.view
+        {
             *element = runtime.view(other);
         }
 
