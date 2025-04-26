@@ -133,7 +133,7 @@ fn init_directory() -> Task<Result<PathBuf, crate::Error>> {
         let mut toml_file = fs::File::create(manifest.join("Cargo.toml")).await?;
         toml_file.write_all(COMPONENT_TOML.as_bytes()).await?;
 
-        let mut gitignore_file = fs::File::create(manifest.join(".gitignore")).await.unwrap();
+        let mut gitignore_file = fs::File::create(manifest.join(".gitignore")).await?;
         gitignore_file
             .write_all(COMPONENT_GITIGNORE.as_bytes())
             .await?;
@@ -178,15 +178,15 @@ fn parse_and_write(
 
                     let timer = std::time::Instant::now();
                     let output = task::spawn_local(async move {
-                        let content = fs::read_to_string(caller).await.unwrap();
-                        let caller = syn::parse_file(&content).unwrap();
+                        let content = fs::read_to_string(caller).await?;
+                        let caller = syn::parse_file(&content)?;
                         let ParsedFile {
                             data,
                             message,
                             state,
                             state_ty,
                             view,
-                        } = FileParser::from_file(&caller).build();
+                        } = FileParser::from_file(&caller).build()?;
 
                         let output = quote! {
                             #![allow(unused_imports)]
@@ -209,17 +209,18 @@ fn parse_and_write(
                             thawing_guest::thaw!(#state_ty);
                         };
 
-                        let content =
-                            prettyplease::unparse(&syn::parse_file(&output.to_string()).unwrap());
+                        let content = prettyplease::unparse(&syn::parse_file(&output.to_string())?);
                         tracing::info!("Wrote:\n{content}");
-                        let mut lib_file = fs::File::create(target).await.unwrap();
-                        lib_file.write_all(content.as_bytes()).await.unwrap();
-                        lib_file.sync_data().await.unwrap();
+                        let mut lib_file = fs::File::create(target).await?;
+                        lib_file.write_all(content.as_bytes()).await?;
+                        lib_file.sync_data().await?;
+
+                        Ok(())
                     })
                     .await
                     .map_err(crate::Error::from);
 
-                    tx.send(output)
+                    tx.send(output.and_then(std::convert::identity))
                         .expect("Failed to send over `oneshot` channel");
 
                     tracing::info!(
@@ -524,16 +525,35 @@ struct ParsedFile {
 }
 
 impl<'ast> FileParser<'ast> {
-    fn build(mut self) -> ParsedFile {
+    fn build(mut self) -> Result<ParsedFile, crate::Error> {
         self.visit_file(&self.file);
 
-        ParsedFile {
-            data: self.data.iter().map(ToTokens::to_token_stream).collect(),
-            view: self.view.unwrap().tokens.clone(),
-            state: self.state.unwrap().to_token_stream(),
-            state_ty: self.state_ty.unwrap().clone(),
-            message: self.message.unwrap().to_token_stream(),
-        }
+        let data = self.data.iter().map(ToTokens::to_token_stream).collect();
+        let view = self
+            .view
+            .ok_or(crate::MacroError::ViewMacroMissing)?
+            .tokens
+            .clone();
+        let state = self
+            .state
+            .ok_or(crate::MacroError::StateAttributeMissing)?
+            .to_token_stream();
+        let state_ty = self
+            .state_ty
+            .ok_or(crate::MacroError::StateAttributeMissing)?
+            .clone();
+        let message = self
+            .message
+            .ok_or(crate::MacroError::MessageAttributeMissing)?
+            .to_token_stream();
+
+        Ok(ParsedFile {
+            data,
+            view,
+            state,
+            state_ty,
+            message,
+        })
     }
 
     fn from_file(file: &'ast syn::File) -> Self {
