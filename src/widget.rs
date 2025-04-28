@@ -106,7 +106,7 @@ where
     }
 
     fn children(&self) -> Vec<Tree> {
-        self.initial.as_widget().children()
+        vec![Tree::new(&self.initial)]
     }
 
     fn diff(&self, tree: &mut Tree) {
