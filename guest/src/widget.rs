@@ -215,6 +215,49 @@ pub struct Style {
     pub color: Option<Color>,
 }
 
+pub fn text_input<Message: serde::Serialize + 'static, Theme>(
+    placeholder: impl Into<String>,
+    value: impl Into<String>,
+) -> TextInput<Message, Theme> {
+    TextInput::new(placeholder, value)
+}
+
+pub struct TextInput<Message, Theme = crate::Theme> {
+    raw: widget::TextInput,
+    _message: PhantomData<Message>,
+    _theme: PhantomData<Theme>,
+}
+
+impl<Message: serde::Serialize + 'static, Theme> TextInput<Message, Theme> {
+    pub fn new(placeholder: impl Into<String>, value: impl Into<String>) -> Self {
+        Self {
+            raw: widget::TextInput::new(&placeholder.into(), &value.into()),
+            _message: PhantomData,
+            _theme: PhantomData,
+        }
+    }
+
+    pub fn on_input(mut self, f: impl Fn(String) -> Message + Send + 'static) -> Self {
+        let guest_fn = guest::Closure::new();
+        TABLE
+            .lock()
+            .unwrap()
+            .insert(guest_fn.id(), Closure::stateful(f));
+        self.raw = self.raw.on_input(guest_fn);
+        self
+    }
+
+    pub fn on_submit(mut self, f: impl Fn() -> Message + Send + 'static) -> Self {
+        let guest_fn = guest::Closure::new();
+        TABLE
+            .lock()
+            .unwrap()
+            .insert(guest_fn.id(), Closure::stateless(f));
+        self.raw = self.raw.on_submit(guest_fn);
+        self
+    }
+}
+
 impl<Theme> From<&str> for Element<Theme> {
     fn from(content: &str) -> Element<Theme> {
         Text::new(content).into()
@@ -248,5 +291,11 @@ impl<Message, Theme> From<Checkbox<Message, Theme>> for Element<Theme> {
 impl<Theme> From<Column<Theme>> for Element<Theme> {
     fn from(column: Column<Theme>) -> Self {
         Element::from(column.raw.into_element())
+    }
+}
+
+impl<Message, Theme> From<TextInput<Message, Theme>> for Element<Theme> {
+    fn from(text_input: TextInput<Message, Theme>) -> Self {
+        Element::from(text_input.raw.into_element())
     }
 }

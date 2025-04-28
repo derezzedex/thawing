@@ -17,6 +17,7 @@ wasmtime::component::bindgen!({
     with: {
         "thawing:core/widget/column": Empty,
         "thawing:core/widget/text": Empty,
+        "thawing:core/widget/text-input": Empty,
         "thawing:core/widget/button": Empty,
         "thawing:core/widget/checkbox": Empty,
         "thawing:core/types/closure": Empty,
@@ -46,6 +47,7 @@ where
         + serde::Serialize
         + iced_widget::checkbox::Catalog
         + iced_widget::button::Catalog
+        + iced_widget::text_input::Catalog
         + iced_widget::text::Catalog,
     <Theme as widget::text::Catalog>::Class<'a>: From<widget::text::StyleFn<'a, Theme>>,
 {

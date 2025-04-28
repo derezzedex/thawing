@@ -401,6 +401,43 @@ pub mod thawing {
                     }
                 }
             }
+            #[derive(Debug)]
+            #[repr(transparent)]
+            pub struct TextInput {
+                handle: _rt::Resource<TextInput>,
+            }
+            impl TextInput {
+                #[doc(hidden)]
+                pub unsafe fn from_handle(handle: u32) -> Self {
+                    Self {
+                        handle: unsafe { _rt::Resource::from_handle(handle) },
+                    }
+                }
+                #[doc(hidden)]
+                pub fn take_handle(&self) -> u32 {
+                    _rt::Resource::take_handle(&self.handle)
+                }
+                #[doc(hidden)]
+                pub fn handle(&self) -> u32 {
+                    _rt::Resource::handle(&self.handle)
+                }
+            }
+            unsafe impl _rt::WasmResource for TextInput {
+                #[inline]
+                unsafe fn drop(_handle: u32) {
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unreachable!();
+                    #[cfg(target_arch = "wasm32")]
+                    {
+                        #[link(wasm_import_module = "thawing:core/widget")]
+                        unsafe extern "C" {
+                            #[link_name = "[resource-drop]text-input"]
+                            fn drop(_: u32);
+                        }
+                        unsafe { drop(_handle) };
+                    }
+                }
+            }
             impl Button {
                 #[allow(unused_unsafe, clippy::all)]
                 pub fn new(content: Element) -> Self {
@@ -1029,6 +1066,114 @@ pub mod thawing {
                         #[link(wasm_import_module = "thawing:core/widget")]
                         unsafe extern "C" {
                             #[link_name = "[method]text.into-element"]
+                            fn wit_import0(_: i32) -> i32;
+                        }
+                        #[cfg(not(target_arch = "wasm32"))]
+                        unsafe extern "C" fn wit_import0(_: i32) -> i32 {
+                            unreachable!()
+                        }
+                        let ret = unsafe { wit_import0((self).handle() as i32) };
+                        unsafe {
+                            super::super::super::thawing::core::types::Element::from_handle(
+                                ret as u32,
+                            )
+                        }
+                    }
+                }
+            }
+            impl TextInput {
+                #[allow(unused_unsafe, clippy::all)]
+                pub fn new(placeholder: &str, value: &str) -> Self {
+                    unsafe {
+                        let vec0 = placeholder;
+                        let ptr0 = vec0.as_ptr().cast::<u8>();
+                        let len0 = vec0.len();
+                        let vec1 = value;
+                        let ptr1 = vec1.as_ptr().cast::<u8>();
+                        let len1 = vec1.len();
+                        #[cfg(target_arch = "wasm32")]
+                        #[link(wasm_import_module = "thawing:core/widget")]
+                        unsafe extern "C" {
+                            #[link_name = "[constructor]text-input"]
+                            fn wit_import2(
+                                _: *mut u8,
+                                _: usize,
+                                _: *mut u8,
+                                _: usize,
+                            ) -> i32;
+                        }
+                        #[cfg(not(target_arch = "wasm32"))]
+                        unsafe extern "C" fn wit_import2(
+                            _: *mut u8,
+                            _: usize,
+                            _: *mut u8,
+                            _: usize,
+                        ) -> i32 {
+                            unreachable!()
+                        }
+                        let ret = unsafe {
+                            wit_import2(ptr0.cast_mut(), len0, ptr1.cast_mut(), len1)
+                        };
+                        unsafe { TextInput::from_handle(ret as u32) }
+                    }
+                }
+            }
+            impl TextInput {
+                #[allow(unused_unsafe, clippy::all)]
+                pub fn on_input(&self, on_input: Closure) -> TextInput {
+                    unsafe {
+                        #[cfg(target_arch = "wasm32")]
+                        #[link(wasm_import_module = "thawing:core/widget")]
+                        unsafe extern "C" {
+                            #[link_name = "[method]text-input.on-input"]
+                            fn wit_import0(_: i32, _: i32) -> i32;
+                        }
+                        #[cfg(not(target_arch = "wasm32"))]
+                        unsafe extern "C" fn wit_import0(_: i32, _: i32) -> i32 {
+                            unreachable!()
+                        }
+                        let ret = unsafe {
+                            wit_import0(
+                                (self).handle() as i32,
+                                (&on_input).take_handle() as i32,
+                            )
+                        };
+                        unsafe { TextInput::from_handle(ret as u32) }
+                    }
+                }
+            }
+            impl TextInput {
+                #[allow(unused_unsafe, clippy::all)]
+                pub fn on_submit(&self, on_submit: Closure) -> TextInput {
+                    unsafe {
+                        #[cfg(target_arch = "wasm32")]
+                        #[link(wasm_import_module = "thawing:core/widget")]
+                        unsafe extern "C" {
+                            #[link_name = "[method]text-input.on-submit"]
+                            fn wit_import0(_: i32, _: i32) -> i32;
+                        }
+                        #[cfg(not(target_arch = "wasm32"))]
+                        unsafe extern "C" fn wit_import0(_: i32, _: i32) -> i32 {
+                            unreachable!()
+                        }
+                        let ret = unsafe {
+                            wit_import0(
+                                (self).handle() as i32,
+                                (&on_submit).take_handle() as i32,
+                            )
+                        };
+                        unsafe { TextInput::from_handle(ret as u32) }
+                    }
+                }
+            }
+            impl TextInput {
+                #[allow(unused_unsafe, clippy::all)]
+                pub fn into_element(&self) -> Element {
+                    unsafe {
+                        #[cfg(target_arch = "wasm32")]
+                        #[link(wasm_import_module = "thawing:core/widget")]
+                        unsafe extern "C" {
+                            #[link_name = "[method]text-input.into-element"]
                             fn wit_import0(_: i32) -> i32;
                         }
                         #[cfg(not(target_arch = "wasm32"))]
@@ -1769,9 +1914,9 @@ macro_rules! __export_thawing_impl {
         () = { #[cfg(target_arch = "wasm32")] #[unsafe (link_section =
         "component-type:wit-bindgen:0.41.0:thawing:core:thawing:imports and exports")]
         #[doc(hidden)] #[allow(clippy::octal_escapes)] pub static
-        __WIT_BINDGEN_COMPONENT_TYPE : [u8; 2093] = *
+        __WIT_BINDGEN_COMPONENT_TYPE : [u8; 2322] = *
         b"\
-\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xaf\x0f\x01A\x02\x01\
+\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\x94\x11\x01A\x02\x01\
 A\x0e\x01B\x14\x04\0\x07closure\x03\x01\x04\0\x07element\x03\x01\x01p}\x04\0\x05\
 bytes\x03\0\x02\x01r\x01\x06amountv\x04\0\x06pixels\x03\0\x04\x01r\x04\x01rv\x01\
 gv\x01bv\x01av\x04\0\x05color\x03\0\x06\x01r\x04\x03topv\x05rightv\x06bottomv\x04\
@@ -1781,44 +1926,49 @@ right\x04\0\x0ahorizontal\x03\0\x0c\x01i\0\x01@\0\0\x0e\x04\0\x14[constructor]cl
 osure\x01\x0f\x01h\0\x01@\x01\x04self\x10\0y\x04\0\x12[method]closure.id\x01\x11\
 \x03\0\x12thawing:core/types\x05\0\x02\x03\0\0\x07element\x02\x03\0\0\x07closure\
 \x02\x03\0\0\x06pixels\x02\x03\0\0\x07padding\x02\x03\0\0\x06length\x02\x03\0\0\x0a\
-horizontal\x02\x03\0\0\x05color\x01BK\x02\x03\x02\x01\x01\x04\0\x07element\x03\0\
+horizontal\x02\x03\0\0\x05color\x01BV\x02\x03\x02\x01\x01\x04\0\x07element\x03\0\
 \0\x02\x03\x02\x01\x02\x04\0\x07closure\x03\0\x02\x02\x03\x02\x01\x03\x04\0\x06p\
 ixels\x03\0\x04\x02\x03\x02\x01\x04\x04\0\x07padding\x03\0\x06\x02\x03\x02\x01\x05\
 \x04\0\x06length\x03\0\x08\x02\x03\x02\x01\x06\x04\0\x0ahorizontal\x03\0\x0a\x02\
 \x03\x02\x01\x07\x04\0\x05color\x03\0\x0c\x04\0\x06button\x03\x01\x04\0\x08check\
-box\x03\x01\x04\0\x06column\x03\x01\x04\0\x04text\x03\x01\x01i\x01\x01i\x0e\x01@\
-\x01\x07content\x12\0\x13\x04\0\x13[constructor]button\x01\x14\x01h\x0e\x01i\x03\
-\x01@\x02\x04self\x15\x08on-press\x16\0\x13\x04\0\x1c[method]button.on-press-wit\
-h\x01\x17\x01@\x01\x04self\x15\0\x12\x04\0\x1b[method]button.into-element\x01\x18\
-\x01i\x0f\x01@\x02\x05labels\x0ais-checked\x7f\0\x19\x04\0\x15[constructor]check\
-box\x01\x1a\x01h\x0f\x01@\x02\x04self\x1b\x09on-toggle\x16\0\x19\x04\0\x1a[metho\
-d]checkbox.on-toggle\x01\x1c\x01@\x01\x04self\x1b\0\x12\x04\0\x1d[method]checkbo\
-x.into-element\x01\x1d\x01i\x10\x01@\0\0\x1e\x04\0\x13[constructor]column\x01\x1f\
-\x01p\x12\x01@\x01\x08children\x20\0\x1e\x04\0\x17[static]column.from-vec\x01!\x01\
-h\x10\x01@\x02\x04self\"\x06amount\x05\0\x1e\x04\0\x16[method]column.spacing\x01\
-#\x01@\x02\x04self\"\x07padding\x07\0\x1e\x04\0\x16[method]column.padding\x01$\x01\
-@\x02\x04self\"\x05width\x09\0\x1e\x04\0\x14[method]column.width\x01%\x01@\x02\x04\
-self\"\x06height\x09\0\x1e\x04\0\x15[method]column.height\x01&\x01@\x02\x04self\"\
-\x05width\x05\0\x1e\x04\0\x18[method]column.max-width\x01'\x01@\x02\x04self\"\x05\
-align\x0b\0\x1e\x04\0\x16[method]column.align-x\x01(\x01@\x02\x04self\"\x04clip\x7f\
-\0\x1e\x04\0\x13[method]column.clip\x01)\x01@\x02\x04self\"\x05child\x12\0\x1e\x04\
-\0\x13[method]column.push\x01*\x01@\x02\x04self\"\x08children\x20\0\x1e\x04\0\x15\
-[method]column.extend\x01+\x01@\x01\x04self\"\0\x12\x04\0\x1b[method]column.into\
--element\x01,\x01i\x11\x01@\x01\x08fragments\0-\x04\0\x11[constructor]text\x01.\x01\
-h\x11\x01@\x02\x04self/\x04size\x05\0-\x04\0\x11[method]text.size\x010\x01@\x02\x04\
-self/\x05color\x0d\0-\x04\0\x12[method]text.color\x011\x01@\x02\x04self/\x08styl\
-e-fn\x16\0-\x04\0\x12[method]text.style\x012\x01@\x01\x04self/\0\x12\x04\0\x19[m\
-ethod]text.into-element\x013\x03\0\x13thawing:core/widget\x05\x08\x02\x03\0\0\x05\
-bytes\x01B\x18\x02\x03\x02\x01\x01\x04\0\x07element\x03\0\0\x02\x03\x02\x01\x02\x04\
-\0\x07closure\x03\0\x02\x02\x03\x02\x01\x09\x04\0\x05bytes\x03\0\x04\x04\0\x05ta\
-ble\x03\x01\x04\0\x03app\x03\x01\x01i\x06\x01@\0\0\x08\x04\0\x12[constructor]tab\
-le\x01\x09\x01h\x06\x01i\x03\x01@\x02\x04self\x0a\x01c\x0b\0\x05\x04\0\x12[metho\
-d]table.call\x01\x0c\x01@\x03\x04self\x0a\x01c\x0b\x05state\x05\0\x05\x04\0\x17[\
-method]table.call-with\x01\x0d\x01i\x07\x01@\x01\x05state\x05\0\x0e\x04\0\x10[co\
-nstructor]app\x01\x0f\x01h\x07\x01i\x01\x01@\x01\x04self\x10\0\x11\x04\0\x10[met\
-hod]app.view\x01\x12\x04\0\x12thawing:core/guest\x05\x0a\x04\0\x14thawing:core/t\
-hawing\x04\0\x0b\x0d\x01\0\x07thawing\x03\0\0\0G\x09producers\x01\x0cprocessed-b\
-y\x02\x0dwit-component\x070.227.1\x10wit-bindgen-rust\x060.41.0";
+box\x03\x01\x04\0\x06column\x03\x01\x04\0\x04text\x03\x01\x04\0\x0atext-input\x03\
+\x01\x01i\x01\x01i\x0e\x01@\x01\x07content\x13\0\x14\x04\0\x13[constructor]butto\
+n\x01\x15\x01h\x0e\x01i\x03\x01@\x02\x04self\x16\x08on-press\x17\0\x14\x04\0\x1c\
+[method]button.on-press-with\x01\x18\x01@\x01\x04self\x16\0\x13\x04\0\x1b[method\
+]button.into-element\x01\x19\x01i\x0f\x01@\x02\x05labels\x0ais-checked\x7f\0\x1a\
+\x04\0\x15[constructor]checkbox\x01\x1b\x01h\x0f\x01@\x02\x04self\x1c\x09on-togg\
+le\x17\0\x1a\x04\0\x1a[method]checkbox.on-toggle\x01\x1d\x01@\x01\x04self\x1c\0\x13\
+\x04\0\x1d[method]checkbox.into-element\x01\x1e\x01i\x10\x01@\0\0\x1f\x04\0\x13[\
+constructor]column\x01\x20\x01p\x13\x01@\x01\x08children!\0\x1f\x04\0\x17[static\
+]column.from-vec\x01\"\x01h\x10\x01@\x02\x04self#\x06amount\x05\0\x1f\x04\0\x16[\
+method]column.spacing\x01$\x01@\x02\x04self#\x07padding\x07\0\x1f\x04\0\x16[meth\
+od]column.padding\x01%\x01@\x02\x04self#\x05width\x09\0\x1f\x04\0\x14[method]col\
+umn.width\x01&\x01@\x02\x04self#\x06height\x09\0\x1f\x04\0\x15[method]column.hei\
+ght\x01'\x01@\x02\x04self#\x05width\x05\0\x1f\x04\0\x18[method]column.max-width\x01\
+(\x01@\x02\x04self#\x05align\x0b\0\x1f\x04\0\x16[method]column.align-x\x01)\x01@\
+\x02\x04self#\x04clip\x7f\0\x1f\x04\0\x13[method]column.clip\x01*\x01@\x02\x04se\
+lf#\x05child\x13\0\x1f\x04\0\x13[method]column.push\x01+\x01@\x02\x04self#\x08ch\
+ildren!\0\x1f\x04\0\x15[method]column.extend\x01,\x01@\x01\x04self#\0\x13\x04\0\x1b\
+[method]column.into-element\x01-\x01i\x11\x01@\x01\x08fragments\0.\x04\0\x11[con\
+structor]text\x01/\x01h\x11\x01@\x02\x04self0\x04size\x05\0.\x04\0\x11[method]te\
+xt.size\x011\x01@\x02\x04self0\x05color\x0d\0.\x04\0\x12[method]text.color\x012\x01\
+@\x02\x04self0\x08style-fn\x17\0.\x04\0\x12[method]text.style\x013\x01@\x01\x04s\
+elf0\0\x13\x04\0\x19[method]text.into-element\x014\x01i\x12\x01@\x02\x0bplacehol\
+ders\x05values\05\x04\0\x17[constructor]text-input\x016\x01h\x12\x01@\x02\x04sel\
+f7\x08on-input\x17\05\x04\0\x1b[method]text-input.on-input\x018\x01@\x02\x04self\
+7\x09on-submit\x17\05\x04\0\x1c[method]text-input.on-submit\x019\x01@\x01\x04sel\
+f7\0\x13\x04\0\x1f[method]text-input.into-element\x01:\x03\0\x13thawing:core/wid\
+get\x05\x08\x02\x03\0\0\x05bytes\x01B\x18\x02\x03\x02\x01\x01\x04\0\x07element\x03\
+\0\0\x02\x03\x02\x01\x02\x04\0\x07closure\x03\0\x02\x02\x03\x02\x01\x09\x04\0\x05\
+bytes\x03\0\x04\x04\0\x05table\x03\x01\x04\0\x03app\x03\x01\x01i\x06\x01@\0\0\x08\
+\x04\0\x12[constructor]table\x01\x09\x01h\x06\x01i\x03\x01@\x02\x04self\x0a\x01c\
+\x0b\0\x05\x04\0\x12[method]table.call\x01\x0c\x01@\x03\x04self\x0a\x01c\x0b\x05\
+state\x05\0\x05\x04\0\x17[method]table.call-with\x01\x0d\x01i\x07\x01@\x01\x05st\
+ate\x05\0\x0e\x04\0\x10[constructor]app\x01\x0f\x01h\x07\x01i\x01\x01@\x01\x04se\
+lf\x10\0\x11\x04\0\x10[method]app.view\x01\x12\x04\0\x12thawing:core/guest\x05\x0a\
+\x04\0\x14thawing:core/thawing\x04\0\x0b\x0d\x01\0\x07thawing\x03\0\0\0G\x09prod\
+ucers\x01\x0cprocessed-by\x02\x0dwit-component\x070.227.1\x10wit-bindgen-rust\x06\
+0.41.0";
         };
     };
 }
@@ -1828,8 +1978,8 @@ pub use __export_thawing_impl as export;
 #[unsafe(link_section = "component-type:wit-bindgen:0.41.0:thawing:core:thawing-with-all-of-its-exports-removed:encoded world")]
 #[doc(hidden)]
 #[allow(clippy::octal_escapes)]
-pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 1854] = *b"\
-\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xa0\x0d\x01A\x02\x01\
+pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 2083] = *b"\
+\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\x85\x0f\x01A\x02\x01\
 A\x0b\x01B\x14\x04\0\x07closure\x03\x01\x04\0\x07element\x03\x01\x01p}\x04\0\x05\
 bytes\x03\0\x02\x01r\x01\x06amountv\x04\0\x06pixels\x03\0\x04\x01r\x04\x01rv\x01\
 gv\x01bv\x01av\x04\0\x05color\x03\0\x06\x01r\x04\x03topv\x05rightv\x06bottomv\x04\
@@ -1839,37 +1989,41 @@ right\x04\0\x0ahorizontal\x03\0\x0c\x01i\0\x01@\0\0\x0e\x04\0\x14[constructor]cl
 osure\x01\x0f\x01h\0\x01@\x01\x04self\x10\0y\x04\0\x12[method]closure.id\x01\x11\
 \x03\0\x12thawing:core/types\x05\0\x02\x03\0\0\x07element\x02\x03\0\0\x07closure\
 \x02\x03\0\0\x06pixels\x02\x03\0\0\x07padding\x02\x03\0\0\x06length\x02\x03\0\0\x0a\
-horizontal\x02\x03\0\0\x05color\x01BK\x02\x03\x02\x01\x01\x04\0\x07element\x03\0\
+horizontal\x02\x03\0\0\x05color\x01BV\x02\x03\x02\x01\x01\x04\0\x07element\x03\0\
 \0\x02\x03\x02\x01\x02\x04\0\x07closure\x03\0\x02\x02\x03\x02\x01\x03\x04\0\x06p\
 ixels\x03\0\x04\x02\x03\x02\x01\x04\x04\0\x07padding\x03\0\x06\x02\x03\x02\x01\x05\
 \x04\0\x06length\x03\0\x08\x02\x03\x02\x01\x06\x04\0\x0ahorizontal\x03\0\x0a\x02\
 \x03\x02\x01\x07\x04\0\x05color\x03\0\x0c\x04\0\x06button\x03\x01\x04\0\x08check\
-box\x03\x01\x04\0\x06column\x03\x01\x04\0\x04text\x03\x01\x01i\x01\x01i\x0e\x01@\
-\x01\x07content\x12\0\x13\x04\0\x13[constructor]button\x01\x14\x01h\x0e\x01i\x03\
-\x01@\x02\x04self\x15\x08on-press\x16\0\x13\x04\0\x1c[method]button.on-press-wit\
-h\x01\x17\x01@\x01\x04self\x15\0\x12\x04\0\x1b[method]button.into-element\x01\x18\
-\x01i\x0f\x01@\x02\x05labels\x0ais-checked\x7f\0\x19\x04\0\x15[constructor]check\
-box\x01\x1a\x01h\x0f\x01@\x02\x04self\x1b\x09on-toggle\x16\0\x19\x04\0\x1a[metho\
-d]checkbox.on-toggle\x01\x1c\x01@\x01\x04self\x1b\0\x12\x04\0\x1d[method]checkbo\
-x.into-element\x01\x1d\x01i\x10\x01@\0\0\x1e\x04\0\x13[constructor]column\x01\x1f\
-\x01p\x12\x01@\x01\x08children\x20\0\x1e\x04\0\x17[static]column.from-vec\x01!\x01\
-h\x10\x01@\x02\x04self\"\x06amount\x05\0\x1e\x04\0\x16[method]column.spacing\x01\
-#\x01@\x02\x04self\"\x07padding\x07\0\x1e\x04\0\x16[method]column.padding\x01$\x01\
-@\x02\x04self\"\x05width\x09\0\x1e\x04\0\x14[method]column.width\x01%\x01@\x02\x04\
-self\"\x06height\x09\0\x1e\x04\0\x15[method]column.height\x01&\x01@\x02\x04self\"\
-\x05width\x05\0\x1e\x04\0\x18[method]column.max-width\x01'\x01@\x02\x04self\"\x05\
-align\x0b\0\x1e\x04\0\x16[method]column.align-x\x01(\x01@\x02\x04self\"\x04clip\x7f\
-\0\x1e\x04\0\x13[method]column.clip\x01)\x01@\x02\x04self\"\x05child\x12\0\x1e\x04\
-\0\x13[method]column.push\x01*\x01@\x02\x04self\"\x08children\x20\0\x1e\x04\0\x15\
-[method]column.extend\x01+\x01@\x01\x04self\"\0\x12\x04\0\x1b[method]column.into\
--element\x01,\x01i\x11\x01@\x01\x08fragments\0-\x04\0\x11[constructor]text\x01.\x01\
-h\x11\x01@\x02\x04self/\x04size\x05\0-\x04\0\x11[method]text.size\x010\x01@\x02\x04\
-self/\x05color\x0d\0-\x04\0\x12[method]text.color\x011\x01@\x02\x04self/\x08styl\
-e-fn\x16\0-\x04\0\x12[method]text.style\x012\x01@\x01\x04self/\0\x12\x04\0\x19[m\
-ethod]text.into-element\x013\x03\0\x13thawing:core/widget\x05\x08\x04\04thawing:\
-core/thawing-with-all-of-its-exports-removed\x04\0\x0b-\x01\0'thawing-with-all-o\
-f-its-exports-removed\x03\0\0\0G\x09producers\x01\x0cprocessed-by\x02\x0dwit-com\
-ponent\x070.227.1\x10wit-bindgen-rust\x060.41.0";
+box\x03\x01\x04\0\x06column\x03\x01\x04\0\x04text\x03\x01\x04\0\x0atext-input\x03\
+\x01\x01i\x01\x01i\x0e\x01@\x01\x07content\x13\0\x14\x04\0\x13[constructor]butto\
+n\x01\x15\x01h\x0e\x01i\x03\x01@\x02\x04self\x16\x08on-press\x17\0\x14\x04\0\x1c\
+[method]button.on-press-with\x01\x18\x01@\x01\x04self\x16\0\x13\x04\0\x1b[method\
+]button.into-element\x01\x19\x01i\x0f\x01@\x02\x05labels\x0ais-checked\x7f\0\x1a\
+\x04\0\x15[constructor]checkbox\x01\x1b\x01h\x0f\x01@\x02\x04self\x1c\x09on-togg\
+le\x17\0\x1a\x04\0\x1a[method]checkbox.on-toggle\x01\x1d\x01@\x01\x04self\x1c\0\x13\
+\x04\0\x1d[method]checkbox.into-element\x01\x1e\x01i\x10\x01@\0\0\x1f\x04\0\x13[\
+constructor]column\x01\x20\x01p\x13\x01@\x01\x08children!\0\x1f\x04\0\x17[static\
+]column.from-vec\x01\"\x01h\x10\x01@\x02\x04self#\x06amount\x05\0\x1f\x04\0\x16[\
+method]column.spacing\x01$\x01@\x02\x04self#\x07padding\x07\0\x1f\x04\0\x16[meth\
+od]column.padding\x01%\x01@\x02\x04self#\x05width\x09\0\x1f\x04\0\x14[method]col\
+umn.width\x01&\x01@\x02\x04self#\x06height\x09\0\x1f\x04\0\x15[method]column.hei\
+ght\x01'\x01@\x02\x04self#\x05width\x05\0\x1f\x04\0\x18[method]column.max-width\x01\
+(\x01@\x02\x04self#\x05align\x0b\0\x1f\x04\0\x16[method]column.align-x\x01)\x01@\
+\x02\x04self#\x04clip\x7f\0\x1f\x04\0\x13[method]column.clip\x01*\x01@\x02\x04se\
+lf#\x05child\x13\0\x1f\x04\0\x13[method]column.push\x01+\x01@\x02\x04self#\x08ch\
+ildren!\0\x1f\x04\0\x15[method]column.extend\x01,\x01@\x01\x04self#\0\x13\x04\0\x1b\
+[method]column.into-element\x01-\x01i\x11\x01@\x01\x08fragments\0.\x04\0\x11[con\
+structor]text\x01/\x01h\x11\x01@\x02\x04self0\x04size\x05\0.\x04\0\x11[method]te\
+xt.size\x011\x01@\x02\x04self0\x05color\x0d\0.\x04\0\x12[method]text.color\x012\x01\
+@\x02\x04self0\x08style-fn\x17\0.\x04\0\x12[method]text.style\x013\x01@\x01\x04s\
+elf0\0\x13\x04\0\x19[method]text.into-element\x014\x01i\x12\x01@\x02\x0bplacehol\
+ders\x05values\05\x04\0\x17[constructor]text-input\x016\x01h\x12\x01@\x02\x04sel\
+f7\x08on-input\x17\05\x04\0\x1b[method]text-input.on-input\x018\x01@\x02\x04self\
+7\x09on-submit\x17\05\x04\0\x1c[method]text-input.on-submit\x019\x01@\x01\x04sel\
+f7\0\x13\x04\0\x1f[method]text-input.into-element\x01:\x03\0\x13thawing:core/wid\
+get\x05\x08\x04\04thawing:core/thawing-with-all-of-its-exports-removed\x04\0\x0b\
+-\x01\0'thawing-with-all-of-its-exports-removed\x03\0\0\0G\x09producers\x01\x0cp\
+rocessed-by\x02\x0dwit-component\x070.227.1\x10wit-bindgen-rust\x060.41.0";
 #[inline(never)]
 #[doc(hidden)]
 pub fn __link_custom_section_describing_imports() {

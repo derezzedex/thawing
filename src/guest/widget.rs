@@ -8,6 +8,8 @@ use wasmtime::component::Resource;
 pub type Column<'a, Theme, Renderer> = iced_widget::Column<'a, guest::Message, Theme, Renderer>;
 pub type Button<'a, Theme, Renderer> = iced_widget::Button<'a, guest::Message, Theme, Renderer>;
 pub type Text<'a, Theme, Renderer> = iced_widget::Text<'a, Theme, Renderer>;
+pub type TextInput<'a, Theme, Renderer> =
+    iced_widget::TextInput<'a, guest::Message, Theme, Renderer>;
 pub type Checkbox<'a, Theme, Renderer> = iced_widget::Checkbox<'a, guest::Message, Theme, Renderer>;
 
 impl<'a, Theme, Renderer> core::widget::HostCheckbox for guest::State<'a, Theme, Renderer>
@@ -279,6 +281,51 @@ where
     }
 
     fn drop(&mut self, _text: Resource<core::widget::Text>) -> wasmtime::Result<()> {
+        Ok(())
+    }
+}
+
+impl<'a, Theme, Renderer> core::widget::HostTextInput for guest::State<'a, Theme, Renderer>
+where
+    Renderer: 'a + text::Renderer,
+    Theme: 'a + iced_widget::text_input::Catalog,
+{
+    fn new(&mut self, placeholder: String, value: String) -> Resource<core::widget::TextInput> {
+        let text_input = TextInput::new(&placeholder, &value);
+
+        self.push(text_input)
+    }
+
+    fn on_input(
+        &mut self,
+        text_input: Resource<core::widget::TextInput>,
+        closure: Resource<core::types::Closure>,
+    ) -> Resource<core::widget::TextInput> {
+        let mut widget = self.get_widget::<TextInput<Theme, Renderer>, _>(&text_input);
+        widget = widget.on_input(move |value| guest::Message::stateful(&closure, value));
+
+        self.insert(text_input, widget)
+    }
+
+    fn on_submit(
+        &mut self,
+        text_input: Resource<core::widget::TextInput>,
+        closure: Resource<core::types::Closure>,
+    ) -> Resource<core::widget::TextInput> {
+        let mut widget = self.get_widget::<TextInput<Theme, Renderer>, _>(&text_input);
+        widget = widget.on_submit(guest::Message::stateless(&closure));
+
+        self.insert(text_input, widget)
+    }
+
+    fn into_element(
+        &mut self,
+        text_input: Resource<core::widget::TextInput>,
+    ) -> Resource<core::widget::Element> {
+        Resource::new_own(text_input.rep())
+    }
+
+    fn drop(&mut self, _button: Resource<core::widget::TextInput>) -> wasmtime::Result<()> {
         Ok(())
     }
 }

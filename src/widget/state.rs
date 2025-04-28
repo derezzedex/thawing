@@ -30,6 +30,7 @@ where
         + serde::Serialize
         + iced_widget::checkbox::Catalog
         + iced_widget::button::Catalog
+        + iced_widget::text_input::Catalog
         + iced_widget::text::Catalog,
     <Theme as iced_widget::text::Catalog>::Class<'static>:
         From<iced_widget::text::StyleFn<'static, Theme>>,

@@ -28,6 +28,7 @@ where
         + serde::Serialize
         + iced_widget::checkbox::Catalog
         + iced_widget::button::Catalog
+        + iced_widget::text_input::Catalog
         + iced_widget::text::Catalog,
     <Theme as iced_widget::text::Catalog>::Class<'static>:
         From<iced_widget::text::StyleFn<'static, Theme>>,
@@ -191,7 +192,7 @@ fn parse_and_write(
                         let output = quote! {
                             #![allow(unused_imports)]
                             use thawing_guest::thawing;
-                            use thawing_guest::widget::{button, checkbox, column, text, Style};
+                            use thawing_guest::widget::{button, checkbox, column, text, text_input, Style};
                             use thawing_guest::{Application, Center, Element, Color, Theme, color};
 
                             #(#data)*
@@ -296,6 +297,7 @@ where
         + serde::Serialize
         + iced_widget::checkbox::Catalog
         + iced_widget::button::Catalog
+        + iced_widget::text_input::Catalog
         + iced_widget::text::Catalog,
     <Theme as iced_widget::text::Catalog>::Class<'static>:
         From<iced_widget::text::StyleFn<'static, Theme>>,
@@ -316,6 +318,7 @@ where
             + serde::Serialize
             + iced_widget::checkbox::Catalog
             + iced_widget::button::Catalog
+            + iced_widget::text_input::Catalog
             + iced_widget::text::Catalog,
         <Theme as iced_widget::text::Catalog>::Class<'static>:
             From<iced_widget::text::StyleFn<'static, Theme>>,
@@ -667,7 +670,7 @@ edition = "2024"
 [workspace]
 
 [dependencies]
-thawing_guest = { git = "ssh://github.com/derezzedex/thawing" }
+thawing_guest = { path = "C:\\Users\\richard\\iced_thawing\\guest" }
 
 [lib]
 crate-type = ["cdylib"]

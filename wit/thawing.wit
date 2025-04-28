@@ -86,6 +86,14 @@ interface widget {
     style: func(style-fn: closure) -> text;
     into-element: func() -> element;
   }
+
+  resource text-input {
+    constructor(placeholder: string, value: string);
+
+    on-input: func(on-input: closure) -> text-input;
+    on-submit: func(on-submit: closure) -> text-input;
+    into-element: func() -> element;
+  }
 }
 
 interface guest {
