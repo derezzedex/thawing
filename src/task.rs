@@ -1,3 +1,4 @@
+mod executor;
 mod file;
 
 use std::marker::PhantomData;
@@ -8,7 +9,7 @@ use iced_core::Rectangle;
 use iced_core::text;
 use iced_core::widget::Operation;
 use iced_core::widget::operation;
-use iced_runtime::{Task, task};
+use iced_widget::runtime::{Task, task};
 
 use crate::runtime;
 use crate::widget::{Id, Inner, View};
@@ -108,16 +109,14 @@ fn fetch_caller_path<Theme: Send + 'static, Renderer: Send + 'static>(id: &Id) -
 }
 
 fn build(manifest: Result<PathBuf, crate::Error>) -> Task<Result<PathBuf, crate::Error>> {
-    use tokio::process::Command;
-
     let manifest = match manifest {
         Err(error) => return Task::done(Err(error)),
         Ok(manifest) => manifest.to_path_buf(),
     };
 
-    Task::future(async move {
+    executor::try_spawn_blocking(move |mut sender| {
         let timer = std::time::Instant::now();
-        let output = Command::new("cargo")
+        let output = std::process::Command::new("cargo")
             .args([
                 "component",
                 "build",
@@ -128,10 +127,10 @@ fn build(manifest: Result<PathBuf, crate::Error>) -> Task<Result<PathBuf, crate:
             ])
             .current_dir(&manifest)
             .stdin(Stdio::null())
+            .stdout(Stdio::null())
             .stderr(Stdio::piped())
             .spawn()?
-            .wait_with_output()
-            .await?;
+            .wait_with_output()?;
 
         tracing::info!(
             "`cargo component` finished with {:?} in {:?}",
@@ -144,7 +143,9 @@ fn build(manifest: Result<PathBuf, crate::Error>) -> Task<Result<PathBuf, crate:
             return Err(crate::Error::CargoComponent(stderr.to_string()));
         }
 
-        Ok(manifest)
+        let _ = sender.try_send(manifest);
+
+        Ok(())
     })
 }
 

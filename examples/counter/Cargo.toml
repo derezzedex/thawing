@@ -8,7 +8,6 @@ publish = false
 [dependencies]
 thawing.workspace = true
 iced.workspace = true
-iced.features = ["tokio"]
 tracing.workspace = true
 
 tracing-subscriber = "0.3"

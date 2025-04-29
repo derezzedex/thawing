@@ -17,11 +17,8 @@ syn.workspace = true
 quote.workspace = true
 prettyplease.workspace = true
 notify-debouncer-mini.workspace = true
-tokio.workspace = true
 thiserror.workspace = true
 iced_core.workspace = true
-iced_futures.workspace = true
-iced_runtime.workspace = true
 iced_widget.workspace = true
 thawing_macro.workspace = true
 
@@ -49,7 +46,6 @@ syn = { version = "2.0", features = ["full", "printing", "visit"] }
 quote = "1.0"
 prettyplease = "0.2"
 notify-debouncer-mini = "0.6"
-tokio = { version = "1.44", features = ["process", "fs", "io-util", "net", "rt", "sync"] }
 iced = { version = "0.14.0-dev", git = "https://github.com/derezzedex/iced.git", rev = "f9e2118030c31f5de537bb173920e40149d6f75f" }
 iced_core = { version = "0.14.0-dev", git = "https://github.com/derezzedex/iced.git", rev = "f9e2118030c31f5de537bb173920e40149d6f75f" }
 iced_futures = { version = "0.14.0-dev", git = "https://github.com/derezzedex/iced.git", rev = "f9e2118030c31f5de537bb173920e40149d6f75f" }

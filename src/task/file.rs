@@ -1,10 +1,12 @@
+use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use iced_futures::futures::channel::mpsc::channel;
-use iced_futures::futures::{SinkExt, Stream, StreamExt};
-use iced_futures::{futures, stream};
-use iced_runtime::Task;
+use iced_widget::runtime::Task;
+use iced_widget::runtime::futures::futures::channel::mpsc::channel;
+use iced_widget::runtime::futures::futures::{SinkExt, Stream, StreamExt};
+use iced_widget::runtime::futures::{futures, stream};
 use notify_debouncer_mini::notify::RecursiveMode;
 use notify_debouncer_mini::{DebouncedEventKind, new_debouncer};
 use proc_macro2::TokenStream;
@@ -12,31 +14,31 @@ use quote::{ToTokens, quote};
 use syn::visit::{self, Visit};
 
 use crate::error::MacroError;
+use crate::task::executor;
 
 pub fn init_directory() -> Task<Result<PathBuf, crate::Error>> {
-    use tokio::fs;
-    use tokio::io::AsyncWriteExt;
-
-    Task::future(async move {
+    executor::try_spawn_blocking(|mut sender| {
         let manifest = tempfile::tempdir()?.into_path().join("component");
 
         let timer = std::time::Instant::now();
-        fs::create_dir(&manifest).await?;
+        fs::create_dir(&manifest)?;
 
         let src_path = manifest.join("src");
-        fs::create_dir(&src_path).await?;
+        fs::create_dir(&src_path)?;
 
         let target_path = manifest.join("target");
-        fs::create_dir(&target_path).await?;
+        fs::create_dir(&target_path)?;
 
-        fs::File::create(src_path.join("lib.rs")).await?;
+        fs::File::create(src_path.join("lib.rs"))?;
 
-        let mut toml_file = fs::File::create(manifest.join("Cargo.toml")).await?;
-        toml_file.write_all(COMPONENT_TOML.as_bytes()).await?;
+        let mut toml_file = fs::File::create(manifest.join("Cargo.toml"))?;
+        toml_file.write_all(COMPONENT_TOML.as_bytes())?;
 
         tracing::info!("Creating `component` tempdir took {:?}", timer.elapsed());
 
-        Ok(manifest)
+        let _ = sender.try_send(manifest);
+
+        Ok(())
     })
 }
 
@@ -44,10 +46,6 @@ pub fn parse_and_write(
     caller: &PathBuf,
     manifest: Result<PathBuf, crate::Error>,
 ) -> Task<Result<PathBuf, crate::Error>> {
-    use tokio::io::AsyncWriteExt;
-    use tokio::sync::oneshot;
-    use tokio::{fs, task};
-
     let manifest = match manifest {
         Err(error) => return Task::done(Err(error)),
         Ok(manifest) => manifest.to_path_buf(),
@@ -56,88 +54,54 @@ pub fn parse_and_write(
     let caller = caller.to_path_buf();
     let target = manifest.join("src").join("lib.rs");
 
-    let rt = tokio::runtime::Builder::new_current_thread()
-        .enable_io()
-        .build();
+    executor::try_spawn_blocking(move |mut sender| {
+        let timer = std::time::Instant::now();
+        let content = fs::read_to_string(caller)?;
+        let caller = syn::parse_file(&content)?;
+        let ParsedFile {
+            data,
+            message,
+            state,
+            state_ty,
+            view,
+        } = FileParser::from_file(&caller).build()?;
 
-    match rt {
-        Err(error) => Task::done(Err(error.into())),
-        Ok(rt) => {
-            let (tx, rx) =
-                oneshot::channel::<(PathBuf, PathBuf, oneshot::Sender<Result<(), crate::Error>>)>();
+        let output = quote! {
+            #![allow(unused_imports)]
+            use thawing_guest::thawing;
+            use thawing_guest::widget::{button, checkbox, column, text, Style};
+            use thawing_guest::{Application, Center, Element, Color, Theme, color};
 
-            std::thread::spawn(move || {
-                let local = task::LocalSet::new();
-                local.spawn_local(async {
-                    let (caller, target, tx) =
-                        rx.await.expect("Failed to recv over `oneshot` channel");
+            #(#data)*
 
-                    let timer = std::time::Instant::now();
-                    let output = task::spawn_local(async move {
-                        let content = fs::read_to_string(caller).await?;
-                        let caller = syn::parse_file(&content)?;
-                        let ParsedFile {
-                            data,
-                            message,
-                            state,
-                            state_ty,
-                            view,
-                        } = FileParser::from_file(&caller).build()?;
+            #message
 
-                        let output = quote! {
-                            #![allow(unused_imports)]
-                            use thawing_guest::thawing;
-                            use thawing_guest::widget::{button, checkbox, column, text, Style};
-                            use thawing_guest::{Application, Center, Element, Color, Theme, color};
+            #state
 
-                            #(#data)*
+            impl Application for #state_ty {
+                fn view(&self) -> impl Into<Element> {
+                    #view
+                }
+            }
 
-                            #message
+            thawing_guest::thaw!(#state_ty);
+        };
 
-                            #state
+        let content = prettyplease::unparse(&syn::parse_file(&output.to_string())?);
+        tracing::info!("Wrote:\n{content}");
+        let mut lib_file = fs::File::create(target)?;
+        lib_file.write_all(content.as_bytes())?;
+        lib_file.sync_data()?;
 
-                            impl Application for #state_ty {
-                                fn view(&self) -> impl Into<Element> {
-                                    #view
-                                }
-                            }
+        tracing::info!(
+            "Parsing and writing to `component` took {:?}",
+            timer.elapsed()
+        );
 
-                            thawing_guest::thaw!(#state_ty);
-                        };
+        let _ = sender.try_send(manifest);
 
-                        let content = prettyplease::unparse(&syn::parse_file(&output.to_string())?);
-                        tracing::info!("Wrote:\n{content}");
-                        let mut lib_file = fs::File::create(target).await?;
-                        lib_file.write_all(content.as_bytes()).await?;
-                        lib_file.sync_data().await?;
-
-                        Ok(())
-                    })
-                    .await
-                    .map_err(crate::Error::from);
-
-                    tx.send(output.and_then(std::convert::identity))
-                        .expect("Failed to send over `oneshot` channel");
-
-                    tracing::info!(
-                        "Parsing and writing to `component` took {:?}",
-                        timer.elapsed()
-                    );
-                });
-
-                rt.block_on(local);
-            });
-
-            Task::future(async move {
-                let (send, response) = oneshot::channel::<Result<(), crate::Error>>();
-                tx.send((caller, target, send))
-                    .map_err(|_| crate::Error::SendFailed)?;
-                response.await.map_err(|_| crate::Error::RecvFailed)??;
-
-                Ok(manifest)
-            })
-        }
-    }
+        Ok(())
+    })
 }
 
 pub fn watch(path: impl AsRef<Path>) -> impl Stream<Item = ()> {

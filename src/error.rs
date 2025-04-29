@@ -1,13 +1,10 @@
 use std::io;
 use std::sync::Arc;
-use tokio::task::JoinError;
 
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum Error {
     #[error("io failed with: {0}")]
     IO(Arc<io::Error>),
-    #[error("task failed with: {0}")]
-    Task(Arc<JoinError>),
     #[error("cargo component build failed:\n{0}")]
     CargoComponent(String),
     #[error("parsing failed with: {0}")]
@@ -21,12 +18,6 @@ pub enum Error {
 impl From<io::Error> for Error {
     fn from(error: io::Error) -> Self {
         Self::IO(Arc::new(error))
-    }
-}
-
-impl From<JoinError> for Error {
-    fn from(error: JoinError) -> Self {
-        Self::Task(Arc::new(error))
     }
 }
 
