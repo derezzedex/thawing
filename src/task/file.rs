@@ -34,11 +34,6 @@ pub fn init_directory() -> Task<Result<PathBuf, crate::Error>> {
         let mut toml_file = fs::File::create(manifest.join("Cargo.toml")).await?;
         toml_file.write_all(COMPONENT_TOML.as_bytes()).await?;
 
-        let mut gitignore_file = fs::File::create(manifest.join(".gitignore")).await?;
-        gitignore_file
-            .write_all(COMPONENT_GITIGNORE.as_bytes())
-            .await?;
-
         tracing::info!("Creating `component` tempdir took {:?}", timer.elapsed());
 
         Ok(manifest)
@@ -349,9 +344,6 @@ impl<'ast> Visit<'ast> for FileParser<'ast> {
         visit::visit_macro(self, node);
     }
 }
-
-const COMPONENT_GITIGNORE: &'static str = r#"bindings.rs
-"#;
 
 const COMPONENT_TOML: &'static str = r#"[package]
 name = "component"
