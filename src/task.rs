@@ -17,6 +17,7 @@ use proc_macro2::TokenStream;
 use quote::{ToTokens, quote};
 use syn::visit::{self, Visit};
 
+use crate::error::MacroError;
 use crate::runtime;
 use crate::widget::{Id, Inner, View};
 
@@ -531,20 +532,20 @@ impl<'ast> FileParser<'ast> {
         let data = self.data.iter().map(ToTokens::to_token_stream).collect();
         let view = self
             .view
-            .ok_or(crate::MacroError::ViewMacroMissing)?
+            .ok_or(MacroError::ViewMacroMissing)?
             .tokens
             .clone();
         let state = self
             .state
-            .ok_or(crate::MacroError::StateAttributeMissing)?
+            .ok_or(MacroError::StateAttributeMissing)?
             .to_token_stream();
         let state_ty = self
             .state_ty
-            .ok_or(crate::MacroError::StateAttributeMissing)?
+            .ok_or(MacroError::StateAttributeMissing)?
             .clone();
         let message = self
             .message
-            .ok_or(crate::MacroError::MessageAttributeMissing)?
+            .ok_or(MacroError::MessageAttributeMissing)?
             .to_token_stream();
 
         Ok(ParsedFile {
