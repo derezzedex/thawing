@@ -1,9 +1,7 @@
-use std::marker::PhantomData;
 use std::path::PathBuf;
 use std::process::Stdio;
 
 use iced_core::Rectangle;
-use iced_core::text;
 use iced_core::widget::Operation;
 use iced_core::widget::operation;
 use iced_widget::runtime::{Task, task};
@@ -12,19 +10,13 @@ use crate::runtime;
 use crate::task::executor;
 use crate::widget::{Id, Inner, View};
 
-pub fn fetch_caller_path<Theme: Send + 'static, Renderer: Send + 'static>(
-    id: &Id,
-) -> Task<PathBuf> {
-    struct GetPath<Theme, Renderer> {
+pub fn fetch_caller_path(id: &Id) -> Task<PathBuf> {
+    struct GetPath {
         id: iced_core::widget::Id,
         path: Option<PathBuf>,
-        theme: PhantomData<Theme>,
-        renderer: PhantomData<Renderer>,
     }
 
-    impl<Theme: Send + 'static, Renderer: Send + 'static> Operation<PathBuf>
-        for GetPath<Theme, Renderer>
-    {
+    impl Operation<PathBuf> for GetPath {
         fn custom(
             &mut self,
             id: Option<&iced_core::widget::Id>,
@@ -33,7 +25,7 @@ pub fn fetch_caller_path<Theme: Send + 'static, Renderer: Send + 'static>(
         ) {
             match id {
                 Some(id) if id == &self.id => {
-                    if let Some(state) = state.downcast_mut::<Inner<Theme, Renderer>>() {
+                    if let Some(state) = state.downcast_mut::<Inner>() {
                         self.path = Some(state.caller.clone());
                         return;
                     }
@@ -62,8 +54,6 @@ pub fn fetch_caller_path<Theme: Send + 'static, Renderer: Send + 'static>(
     task::widget(GetPath {
         id: id.0.clone(),
         path: None,
-        theme: PhantomData::<Theme>,
-        renderer: PhantomData::<Renderer>,
     })
 }
 
@@ -108,41 +98,16 @@ pub fn build(manifest: Result<PathBuf, crate::Error>) -> Task<Result<PathBuf, cr
     })
 }
 
-pub fn create_runtime<Theme, Renderer>(
+pub fn create_runtime(
     id: &Id,
     manifest: Result<PathBuf, crate::Error>,
-) -> Task<(Id, Result<PathBuf, crate::Error>)>
-where
-    Renderer: 'static + Send + iced_core::Renderer + text::Renderer,
-    Theme: 'static
-        + Send
-        + serde::Serialize
-        + iced_widget::checkbox::Catalog
-        + iced_widget::button::Catalog
-        + iced_widget::text::Catalog,
-    <Theme as iced_widget::text::Catalog>::Class<'static>:
-        From<iced_widget::text::StyleFn<'static, Theme>>,
-{
-    struct CreateRuntime<Theme, Renderer> {
+) -> Task<(Id, Result<PathBuf, crate::Error>)> {
+    struct CreateRuntime {
         id: Id,
         manifest: Result<PathBuf, crate::Error>,
-        theme: PhantomData<Theme>,
-        renderer: PhantomData<Renderer>,
     }
 
-    impl<Theme, Renderer> Operation<(Id, Result<PathBuf, crate::Error>)>
-        for CreateRuntime<Theme, Renderer>
-    where
-        Renderer: 'static + Send + iced_core::Renderer + text::Renderer,
-        Theme: 'static
-            + Send
-            + serde::Serialize
-            + iced_widget::checkbox::Catalog
-            + iced_widget::button::Catalog
-            + iced_widget::text::Catalog,
-        <Theme as iced_widget::text::Catalog>::Class<'static>:
-            From<iced_widget::text::StyleFn<'static, Theme>>,
-    {
+    impl Operation<(Id, Result<PathBuf, crate::Error>)> for CreateRuntime {
         fn custom(
             &mut self,
             id: Option<&iced_core::widget::Id>,
@@ -151,7 +116,7 @@ where
         ) {
             match id {
                 Some(id) if id == &self.id.0 => {
-                    if let Some(state) = state.downcast_mut::<Inner<Theme, Renderer>>() {
+                    if let Some(state) = state.downcast_mut::<Inner>() {
                         if let View::None | View::Failed(_) = &mut state.view {
                             match &self.manifest {
                                 Err(error) => {
@@ -201,25 +166,18 @@ where
     task::widget(CreateRuntime {
         id: id.clone(),
         manifest,
-        theme: PhantomData::<Theme>,
-        renderer: PhantomData::<Renderer>,
     })
 }
 
-pub fn reload<Theme: Send + 'static, Renderer: Send + 'static>(
-    id: impl Into<Id>,
-    error: Option<crate::Error>,
-) -> Task<()> {
+pub fn reload(id: impl Into<Id>, error: Option<crate::Error>) -> Task<()> {
     let id = id.into();
 
-    struct Reload<Theme, Renderer> {
+    struct Reload {
         id: iced_core::widget::Id,
         error: Option<crate::Error>,
-        theme: PhantomData<Theme>,
-        renderer: PhantomData<Renderer>,
     }
 
-    impl<Theme: Send + 'static, Renderer: Send + 'static> Operation for Reload<Theme, Renderer> {
+    impl Operation for Reload {
         fn custom(
             &mut self,
             id: Option<&iced_core::widget::Id>,
@@ -228,7 +186,7 @@ pub fn reload<Theme: Send + 'static, Renderer: Send + 'static>(
         ) {
             match id {
                 Some(id) if id == &self.id => {
-                    if let Some(state) = state.downcast_mut::<Inner<Theme, Renderer>>() {
+                    if let Some(state) = state.downcast_mut::<Inner>() {
                         let timer = std::time::Instant::now();
                         if let View::Built {
                             runtime,
@@ -269,7 +227,5 @@ pub fn reload<Theme: Send + 'static, Renderer: Send + 'static>(
     task::widget(Reload {
         id: id.into(),
         error,
-        theme: PhantomData::<Theme>,
-        renderer: PhantomData::<Renderer>,
     })
 }

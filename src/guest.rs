@@ -3,10 +3,10 @@ mod widget;
 
 use std::collections::HashMap;
 
-use iced_core::{Element, Widget, element};
-use iced_widget::text;
+use iced_core::{Widget, element};
 use wasmtime::component::{Resource, ResourceTable};
 
+use crate::Element;
 use crate::runtime::thawing::core;
 use crate::runtime::{self, Bytes, Empty};
 
@@ -37,13 +37,13 @@ impl Message {
 }
 
 #[derive(Default)]
-pub(crate) struct State<'a, Theme, Renderer> {
+pub(crate) struct State<'a> {
     pub(crate) table: ResourceTable,
-    pub(crate) element: Table<Element<'a, Message, Theme, Renderer>>,
-    pub(crate) runtime: Option<runtime::State<'a, Theme, Renderer>>,
+    pub(crate) element: Table<Element<'a, Message>>,
+    pub(crate) runtime: Option<runtime::State<'a>>,
 }
 
-impl<'a, Theme, Renderer> State<'a, Theme, Renderer> {
+impl<'a> State<'a> {
     pub(crate) fn new() -> Self {
         Self {
             table: ResourceTable::new(),
@@ -53,20 +53,17 @@ impl<'a, Theme, Renderer> State<'a, Theme, Renderer> {
     }
 }
 
-impl<'a, Theme, Renderer> State<'a, Theme, Renderer>
-where
-    Renderer: iced_core::Renderer,
-{
+impl<'a> State<'a> {
     pub fn push<W>(&mut self, widget: W) -> Resource<Empty>
     where
-        W: Into<Element<'a, Message, Theme, Renderer>>,
+        W: Into<Element<'a, Message>>,
     {
         let res = self.table.push(()).unwrap();
         self.element.insert(res.rep(), widget.into());
         res
     }
 
-    pub fn get<R>(&mut self, element: &Resource<R>) -> Element<'a, Message, Theme, Renderer>
+    pub fn get<R>(&mut self, element: &Resource<R>) -> Element<'a, Message>
     where
         R: 'static,
     {
@@ -76,7 +73,7 @@ where
     pub fn get_widget<W, R>(&mut self, element: &Resource<R>) -> W
     where
         R: 'static,
-        W: Widget<Message, Theme, Renderer>,
+        W: Widget<Message, iced_widget::Theme, iced_widget::Renderer>,
     {
         let widget = element::into_raw(self.get(element));
 
@@ -86,37 +83,25 @@ where
     pub fn insert<E, R>(&mut self, resource: Resource<R>, widget: E) -> Resource<R>
     where
         R: 'static,
-        E: Into<Element<'a, Message, Theme, Renderer>>,
+        E: Into<Element<'a, Message>>,
     {
         self.element.insert(resource.rep(), widget.into());
         Resource::new_own(resource.rep())
     }
 }
 
-// TODO(derezzedex): fix this
-// this forces users to have implemented `Catalog` in their `Theme` for every widget available
-impl<'a, Theme, Renderer> core::widget::Host for State<'a, Theme, Renderer>
-where
-    Renderer: 'a + iced_core::Renderer + iced_core::text::Renderer,
-    Theme: 'a
-        + serde::Serialize
-        + iced_widget::checkbox::Catalog
-        + iced_widget::button::Catalog
-        + iced_widget::text::Catalog,
-    <Theme as text::Catalog>::Class<'a>: From<text::StyleFn<'a, Theme>>,
-{
-}
+impl<'a> core::widget::Host for State<'a> {}
 
-impl<'a, Theme, Renderer> core::types::Host for State<'a, Theme, Renderer> {}
+impl<'a> core::types::Host for State<'a> {}
 
-impl<'a, Theme, Renderer> core::types::HostElement for State<'a, Theme, Renderer> {
+impl<'a> core::types::HostElement for State<'a> {
     fn drop(&mut self, element: Resource<core::types::Element>) -> wasmtime::Result<()> {
         self.element.remove(&element.rep());
         Ok(())
     }
 }
 
-impl<'a, Theme, Renderer> core::types::HostClosure for State<'a, Theme, Renderer> {
+impl<'a> core::types::HostClosure for State<'a> {
     fn new(&mut self) -> Resource<core::widget::Closure> {
         self.table.push(()).unwrap()
     }

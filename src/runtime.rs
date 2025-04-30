@@ -2,11 +2,10 @@ use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-use iced_core::Element;
-use iced_core::{text, widget};
 use wasmtime::component::{Component, Linker, Resource, ResourceAny};
 use wasmtime::{Engine, Store};
 
+use crate::Element;
 use crate::guest;
 
 pub type Empty = ();
@@ -24,14 +23,14 @@ wasmtime::component::bindgen!({
     },
 });
 
-pub(crate) struct Runtime<'a, Theme, Renderer> {
+pub(crate) struct Runtime<'a> {
     engine: Engine,
-    linker: Linker<guest::State<'a, Theme, Renderer>>,
-    state: State<'a, Theme, Renderer>,
+    linker: Linker<guest::State<'a>>,
+    state: State<'a>,
     binary_path: PathBuf,
 }
 
-impl<'a, Theme, Renderer> Runtime<'a, Theme, Renderer> {
+impl<'a> Runtime<'a> {
     pub fn reload(&mut self) {
         self.state
             .reload(&self.engine, &self.linker, &self.binary_path);
@@ -39,16 +38,7 @@ impl<'a, Theme, Renderer> Runtime<'a, Theme, Renderer> {
     }
 }
 
-impl<'a, Theme, Renderer> Runtime<'a, Theme, Renderer>
-where
-    Renderer: 'a + iced_core::Renderer + text::Renderer,
-    Theme: 'a
-        + serde::Serialize
-        + iced_widget::checkbox::Catalog
-        + iced_widget::button::Catalog
-        + iced_widget::text::Catalog,
-    <Theme as widget::text::Catalog>::Class<'a>: From<widget::text::StyleFn<'a, Theme>>,
-{
+impl<'a> Runtime<'a> {
     pub fn new(manifest: &PathBuf) -> Self {
         let binary_path = manifest
             .join("target")
@@ -79,25 +69,25 @@ where
         self.state.call(closure, data)
     }
 
-    pub fn view(&self, bytes: &Vec<u8>) -> Element<'a, guest::Message, Theme, Renderer> {
+    pub fn view(&self, bytes: &Vec<u8>) -> Element<'a, guest::Message> {
         self.state.view(bytes)
     }
 
-    pub(crate) fn state(&self) -> State<'a, Theme, Renderer> {
+    pub(crate) fn state(&self) -> State<'a> {
         self.state.clone()
     }
 }
 
-pub(crate) struct State<'a, Theme, Renderer> {
-    pub(crate) store: Rc<RefCell<Store<guest::State<'a, Theme, Renderer>>>>,
+pub(crate) struct State<'a> {
+    pub(crate) store: Rc<RefCell<Store<guest::State<'a>>>>,
     pub(crate) bindings: Rc<RefCell<Thawing>>,
     pub(crate) table: Rc<RefCell<ResourceAny>>,
 }
 
-impl<'a, Theme, Renderer> State<'a, Theme, Renderer> {
+impl<'a> State<'a> {
     fn new(
         engine: &Engine,
-        linker: &Linker<guest::State<'a, Theme, Renderer>>,
+        linker: &Linker<guest::State<'a>>,
         binary_path: impl AsRef<Path>,
     ) -> Self {
         let component = Component::from_file(&engine, binary_path).unwrap();
@@ -165,7 +155,7 @@ impl<'a, Theme, Renderer> State<'a, Theme, Renderer> {
     fn reload(
         &mut self,
         engine: &Engine,
-        linker: &Linker<guest::State<'a, Theme, Renderer>>,
+        linker: &Linker<guest::State<'a>>,
         binary_path: impl AsRef<Path>,
     ) {
         let component = Component::from_file(&engine, binary_path).unwrap();
@@ -188,17 +178,8 @@ impl<'a, Theme, Renderer> State<'a, Theme, Renderer> {
     }
 }
 
-impl<'a, Theme, Renderer> State<'a, Theme, Renderer>
-where
-    Renderer: 'a + iced_core::Renderer + text::Renderer,
-    Theme: 'a
-        + serde::Serialize
-        + iced_widget::checkbox::Catalog
-        + iced_widget::button::Catalog
-        + iced_widget::text::Catalog,
-    <Theme as widget::text::Catalog>::Class<'a>: From<widget::text::StyleFn<'a, Theme>>,
-{
-    fn view(&self, bytes: &Vec<u8>) -> Element<'a, guest::Message, Theme, Renderer> {
+impl<'a> State<'a> {
+    fn view(&self, bytes: &Vec<u8>) -> Element<'a, guest::Message> {
         let mut store = self.store.borrow_mut();
         let mut table = self.table.borrow_mut();
         table.resource_drop(&mut *store).unwrap();
@@ -233,7 +214,7 @@ where
     }
 }
 
-impl<'a, Theme, Renderer> Clone for State<'a, Theme, Renderer> {
+impl<'a> Clone for State<'a> {
     fn clone(&self) -> Self {
         Self {
             store: self.store.clone(),

@@ -1,39 +1,27 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use iced_core::Element;
-use iced_core::text;
-
+use crate::Element;
 use crate::{guest, runtime};
 
-pub(crate) enum View<Theme, Renderer> {
+pub(crate) enum View {
     None,
     Failed(crate::Error),
     Built {
-        runtime: runtime::Runtime<'static, Theme, Renderer>,
-        element: Element<'static, guest::Message, Theme, Renderer>,
+        runtime: runtime::Runtime<'static>,
+        element: Element<'static, guest::Message>,
         error: Option<crate::Error>,
     },
 }
 
-pub(crate) struct Inner<Theme, Renderer> {
-    pub(crate) view: View<Theme, Renderer>,
+pub(crate) struct Inner {
+    pub(crate) view: View,
     pub(crate) invalidated: bool,
     pub(crate) bytes: Arc<Vec<u8>>,
     pub(crate) caller: PathBuf,
 }
 
-impl<Theme, Renderer> Inner<Theme, Renderer>
-where
-    Renderer: 'static + iced_core::Renderer + text::Renderer,
-    Theme: 'static
-        + serde::Serialize
-        + iced_widget::checkbox::Catalog
-        + iced_widget::button::Catalog
-        + iced_widget::text::Catalog,
-    <Theme as iced_widget::text::Catalog>::Class<'static>:
-        From<iced_widget::text::StyleFn<'static, Theme>>,
-{
+impl Inner {
     pub(crate) fn new(bytes: Arc<Vec<u8>>, caller: &PathBuf) -> Self {
         let caller = caller.clone();
 

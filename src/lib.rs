@@ -5,11 +5,13 @@ mod task;
 mod widget;
 
 pub use error::Error;
-pub use iced_core::Element;
 pub use serde;
 pub use task::thaw;
 pub use thawing_macro::data;
 pub use widget::Thawing;
+
+pub type Element<'a, Message> =
+    iced_core::Element<'a, Message, iced_widget::Theme, iced_widget::Renderer>;
 
 #[macro_export]
 macro_rules! view {
