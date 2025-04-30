@@ -7,7 +7,7 @@ mod widget;
 pub use error::Error;
 pub use iced_core::Element;
 pub use serde;
-pub use task::{reload, watcher};
+pub use task::thaw;
 pub use thawing_macro::data;
 pub use widget::Thawing;
 
