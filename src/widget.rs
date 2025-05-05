@@ -10,9 +10,8 @@ use iced_core::{Clipboard, Event, Layout, Length, Rectangle, Shell, Size, Widget
 use iced_core::{layout, mouse, renderer};
 
 use crate::Element;
-use crate::guest;
 pub use id::Id;
-pub(crate) use state::{Inner, View};
+pub(crate) use state::{Error, Inner, View};
 
 pub struct Thawing<'a, Message, State = ()> {
     id: Option<Id>,
@@ -21,9 +20,7 @@ pub struct Thawing<'a, Message, State = ()> {
 
     caller: PathBuf,
     initial: Element<'a, Message>,
-    failed: Option<Element<'a, Message>>,
     bytes: Arc<Vec<u8>>,
-    mapper: Option<Box<dyn Fn(guest::Message) -> Message + 'a>>,
 
     state: PhantomData<&'a State>,
 }
@@ -34,11 +31,9 @@ impl<'a, Message, State> Thawing<'a, Message, State> {
             id: None,
             caller: Path::new(file).canonicalize().unwrap(),
             initial: element.into(),
-            failed: None,
             bytes: Arc::new(Vec::new()),
             width: Length::Shrink,
             height: Length::Shrink,
-            mapper: None,
             state: PhantomData,
         }
     }
@@ -73,7 +68,7 @@ impl<'a, Message, State> Widget<Message, iced_widget::Theme, iced_widget::Render
     for Thawing<'a, Message, State>
 where
     State: serde::Serialize + 'static,
-    Message: serde::Serialize + serde::de::DeserializeOwned,
+    Message: serde::Serialize + serde::de::DeserializeOwned + 'static,
 {
     fn tag(&self) -> tree::Tag {
         struct Tag<T>(T);
@@ -82,7 +77,7 @@ where
     }
 
     fn state(&self) -> tree::State {
-        let state = Inner::new(Arc::clone(&self.bytes), &self.caller);
+        let state = Inner::<Message>::new(Arc::clone(&self.bytes), &self.caller);
         tree::State::new(state)
     }
 
@@ -91,16 +86,14 @@ where
     }
 
     fn diff(&self, tree: &mut Tree) {
-        let state = tree.state.downcast_mut::<Inner>();
+        let state = tree.state.downcast_mut::<Inner<Message>>();
         state.diff(&self.bytes);
 
         match &state.view {
             View::Failed(error)
             | View::Built {
                 error: Some(error), ..
-            } => failed::<'_, Message>(error)
-                .as_widget()
-                .diff(&mut tree.children[0]),
+            } => error.as_ref().as_widget().diff(&mut tree.children[0]),
             View::None => self.initial.as_widget().diff(&mut tree.children[0]),
             View::Built { element, .. } => element.as_widget().diff(&mut tree.children[0]),
         }
@@ -116,17 +109,16 @@ where
         renderer: &iced_widget::Renderer,
         limits: &layout::Limits,
     ) -> layout::Node {
-        let state = tree.state.downcast_ref::<Inner>();
+        let state = tree.state.downcast_ref::<Inner<Message>>();
 
         match &state.view {
             View::Failed(error)
             | View::Built {
                 error: Some(error), ..
-            } => failed::<'_, Message>(error).as_widget().layout(
-                &mut tree.children[0],
-                renderer,
-                limits,
-            ),
+            } => error
+                .as_ref()
+                .as_widget()
+                .layout(&mut tree.children[0], renderer, limits),
             View::None => self
                 .initial
                 .as_widget()
@@ -147,14 +139,14 @@ where
         operation: &mut dyn Operation,
     ) {
         let id = self.id.as_ref().map(|id| &id.0);
-        let state = tree.state.downcast_mut::<Inner>();
+        let state = tree.state.downcast_mut::<Inner<Message>>();
 
         operation.custom(id, layout.bounds(), state);
         operation.container(id, layout.bounds(), &mut |operation| match &state.view {
             View::Failed(error)
             | View::Built {
                 error: Some(error), ..
-            } => failed::<'_, Message>(error).as_widget().operate(
+            } => error.as_ref().as_widget().operate(
                 &mut tree.children[0],
                 layout,
                 renderer,
@@ -184,7 +176,7 @@ where
         shell: &mut Shell<'_, Message>,
         viewport: &Rectangle,
     ) {
-        let state = tree.state.downcast_mut::<Inner>();
+        let state = tree.state.downcast_mut::<Inner<Message>>();
 
         if state.invalidated {
             shell.request_redraw();
@@ -195,7 +187,7 @@ where
             View::Failed(error)
             | View::Built {
                 error: Some(error), ..
-            } => failed::<'_, Message>(error).as_widget_mut().update(
+            } => error.as_mut().as_widget_mut().update(
                 &mut tree.children[0],
                 event,
                 layout,
@@ -247,13 +239,13 @@ where
         viewport: &Rectangle,
         renderer: &iced_widget::Renderer,
     ) -> mouse::Interaction {
-        let state = tree.state.downcast_ref::<Inner>();
+        let state = tree.state.downcast_ref::<Inner<Message>>();
 
         match &state.view {
             View::Failed(error)
             | View::Built {
                 error: Some(error), ..
-            } => failed::<'_, Message>(error).as_widget().mouse_interaction(
+            } => error.as_ref().as_widget().mouse_interaction(
                 &tree.children[0],
                 layout,
                 cursor,
@@ -287,13 +279,13 @@ where
         cursor: mouse::Cursor,
         viewport: &Rectangle,
     ) {
-        let state = tree.state.downcast_ref::<Inner>();
+        let state = tree.state.downcast_ref::<Inner<Message>>();
 
         match &state.view {
             View::Failed(error)
             | View::Built {
                 error: Some(error), ..
-            } => failed::<'_, Message>(error).as_widget().draw(
+            } => error.as_ref().as_widget().draw(
                 &tree.children[0],
                 renderer,
                 theme,
@@ -331,21 +323,18 @@ where
         translation: iced_core::Vector,
     ) -> Option<iced_core::overlay::Element<'b, Message, iced_widget::Theme, iced_widget::Renderer>>
     {
-        let state = tree.state.downcast_mut::<Inner>();
+        let state = tree.state.downcast_mut::<Inner<Message>>();
 
         match &mut state.view {
             View::Failed(error)
             | View::Built {
                 error: Some(error), ..
-            } => {
-                self.failed = Some(failed::<'_, Message>(error));
-                self.failed.as_mut().unwrap().as_widget_mut().overlay(
-                    &mut tree.children[0],
-                    layout,
-                    renderer,
-                    translation,
-                )
-            }
+            } => error.as_mut().as_widget_mut().overlay(
+                &mut tree.children[0],
+                layout,
+                renderer,
+                translation,
+            ),
             View::None => self.initial.as_widget_mut().overlay(
                 &mut tree.children[0],
                 layout,
@@ -353,23 +342,11 @@ where
                 translation,
             ),
             View::Built {
-                element, runtime, ..
-            } => {
-                let runtime = runtime.state();
-                self.mapper = Some(Box::new(move |message: guest::Message| {
-                    runtime.call(message.closure, message.data)
-                }));
-                let mapper = self.mapper.as_ref().unwrap();
-
-                element
-                    .as_widget_mut()
-                    .overlay(&mut tree.children[0], layout, renderer, translation)
-                    .map(move |overlay| overlay.map(mapper))
-            }
+                element, mapper, ..
+            } => element
+                .as_widget_mut()
+                .overlay(&mut tree.children[0], layout, renderer, translation)
+                .map(move |overlay| overlay.map(mapper)),
         }
     }
-}
-
-fn failed<'a, Message>(text: impl ToString) -> Element<'a, Message> {
-    iced_widget::text(text.to_string()).size(12).into()
 }

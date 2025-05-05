@@ -36,7 +36,7 @@ impl Counter {
     fn new() -> (Self, iced::Task<Message>) {
         (
             Self::default(),
-            thawing::thaw(ID).map(|_| Message::Reloaded),
+            thawing::thaw::<Message>(ID).map(|_| Message::Reloaded),
         )
     }
 

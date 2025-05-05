@@ -1,3 +1,4 @@
+use std::marker::PhantomData;
 use std::path::PathBuf;
 use std::process::Stdio;
 
@@ -6,17 +7,19 @@ use iced_core::widget::Operation;
 use iced_core::widget::operation;
 use iced_widget::runtime::{Task, task};
 
+use crate::guest;
 use crate::runtime;
 use crate::task::executor;
-use crate::widget::{Id, Inner, View};
+use crate::widget::{Error, Id, Inner, View};
 
-pub fn fetch_caller_path(id: &Id) -> Task<PathBuf> {
-    struct GetPath {
+pub fn fetch_caller_path<Message: Send + 'static>(id: &Id) -> Task<PathBuf> {
+    struct GetPath<Message> {
         id: iced_core::widget::Id,
         path: Option<PathBuf>,
+        message: PhantomData<Message>,
     }
 
-    impl Operation<PathBuf> for GetPath {
+    impl<Message: Send + 'static> Operation<PathBuf> for GetPath<Message> {
         fn custom(
             &mut self,
             id: Option<&iced_core::widget::Id>,
@@ -25,7 +28,7 @@ pub fn fetch_caller_path(id: &Id) -> Task<PathBuf> {
         ) {
             match id {
                 Some(id) if id == &self.id => {
-                    if let Some(state) = state.downcast_mut::<Inner>() {
+                    if let Some(state) = state.downcast_mut::<Inner<Message>>() {
                         self.path = Some(state.caller.clone());
                         return;
                     }
@@ -54,6 +57,7 @@ pub fn fetch_caller_path(id: &Id) -> Task<PathBuf> {
     task::widget(GetPath {
         id: id.0.clone(),
         path: None,
+        message: PhantomData::<Message>,
     })
 }
 
@@ -98,16 +102,19 @@ pub fn build(manifest: Result<PathBuf, crate::Error>) -> Task<Result<PathBuf, cr
     })
 }
 
-pub fn create_runtime(
+pub fn create_runtime<Message: serde::de::DeserializeOwned + Send + 'static>(
     id: &Id,
     manifest: Result<PathBuf, crate::Error>,
 ) -> Task<(Id, Result<PathBuf, crate::Error>)> {
-    struct CreateRuntime {
+    struct CreateRuntime<Message> {
         id: Id,
         manifest: Result<PathBuf, crate::Error>,
+        message: PhantomData<Message>,
     }
 
-    impl Operation<(Id, Result<PathBuf, crate::Error>)> for CreateRuntime {
+    impl<Message: serde::de::DeserializeOwned + Send + 'static>
+        Operation<(Id, Result<PathBuf, crate::Error>)> for CreateRuntime<Message>
+    {
         fn custom(
             &mut self,
             id: Option<&iced_core::widget::Id>,
@@ -116,20 +123,28 @@ pub fn create_runtime(
         ) {
             match id {
                 Some(id) if id == &self.id.0 => {
-                    if let Some(state) = state.downcast_mut::<Inner>() {
+                    if let Some(state) = state.downcast_mut::<Inner<Message>>() {
                         if let View::None | View::Failed(_) = &mut state.view {
                             match &self.manifest {
                                 Err(error) => {
-                                    state.view = View::Failed(error.clone());
+                                    state.view = View::Failed(Error::new(error.clone()));
                                     tracing::error!("Failed to create runtime {error:?}")
                                 }
                                 Ok(manifest) => {
                                     let timer = std::time::Instant::now();
                                     let runtime = runtime::Runtime::new(manifest);
                                     let element = runtime.view(&state.bytes);
+                                    let mapper = {
+                                        let runtime = runtime.state();
+                                        Box::new(move |message: guest::Message| {
+                                            runtime.call(message.closure, message.data)
+                                        })
+                                    };
+
                                     state.view = View::Built {
                                         runtime,
                                         element,
+                                        mapper,
                                         error: None,
                                     };
                                     state.invalidated = true;
@@ -166,18 +181,20 @@ pub fn create_runtime(
     task::widget(CreateRuntime {
         id: id.clone(),
         manifest,
+        message: PhantomData::<Message>,
     })
 }
 
-pub fn reload(id: impl Into<Id>, error: Option<crate::Error>) -> Task<()> {
+pub fn reload<Message: Send + 'static>(id: impl Into<Id>, error: Option<crate::Error>) -> Task<()> {
     let id = id.into();
 
-    struct Reload {
+    struct Reload<Message> {
         id: iced_core::widget::Id,
         error: Option<crate::Error>,
+        message: PhantomData<Message>,
     }
 
-    impl Operation for Reload {
+    impl<Message: Send + 'static> Operation for Reload<Message> {
         fn custom(
             &mut self,
             id: Option<&iced_core::widget::Id>,
@@ -186,7 +203,7 @@ pub fn reload(id: impl Into<Id>, error: Option<crate::Error>) -> Task<()> {
         ) {
             match id {
                 Some(id) if id == &self.id => {
-                    if let Some(state) = state.downcast_mut::<Inner>() {
+                    if let Some(state) = state.downcast_mut::<Inner<Message>>() {
                         let timer = std::time::Instant::now();
                         if let View::Built {
                             runtime,
@@ -194,7 +211,7 @@ pub fn reload(id: impl Into<Id>, error: Option<crate::Error>) -> Task<()> {
                             ..
                         } = &mut state.view
                         {
-                            *current_error = self.error.clone();
+                            *current_error = self.error.take().map(Error::new);
                             if self.error.is_some() {
                                 return;
                             }
@@ -227,5 +244,6 @@ pub fn reload(id: impl Into<Id>, error: Option<crate::Error>) -> Task<()> {
     task::widget(Reload {
         id: id.into(),
         error,
+        message: PhantomData::<Message>,
     })
 }
