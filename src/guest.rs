@@ -43,6 +43,10 @@ pub(crate) struct State<'a> {
     pub(crate) runtime: Option<runtime::State<'a>>,
 }
 
+// This should be safe, `wasmtime::Store` seems to require `Send` because of `Preview 3`,
+// but that's not used and not even available yet.
+unsafe impl<'a> Send for State<'a> {}
+
 impl<'a> State<'a> {
     pub(crate) fn new() -> Self {
         Self {
