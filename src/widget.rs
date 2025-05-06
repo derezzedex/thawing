@@ -87,16 +87,8 @@ where
 
     fn diff(&self, tree: &mut Tree) {
         let state = tree.state.downcast_mut::<Inner<Message>>();
-        state.diff(&self.bytes);
 
-        match &state.view {
-            View::Failed(error)
-            | View::Built {
-                error: Some(error), ..
-            } => error.as_ref().as_widget().diff(&mut tree.children[0]),
-            View::None => self.initial.as_widget().diff(&mut tree.children[0]),
-            View::Built { element, .. } => element.as_widget().diff(&mut tree.children[0]),
-        }
+        state.diff(&self.bytes, &self.initial, &mut tree.children[0]);
     }
 
     fn size(&self) -> Size<Length> {
@@ -111,24 +103,7 @@ where
     ) -> layout::Node {
         let state = tree.state.downcast_ref::<Inner<Message>>();
 
-        match &state.view {
-            View::Failed(error)
-            | View::Built {
-                error: Some(error), ..
-            } => error
-                .as_ref()
-                .as_widget()
-                .layout(&mut tree.children[0], renderer, limits),
-            View::None => self
-                .initial
-                .as_widget()
-                .layout(&mut tree.children[0], renderer, limits),
-            View::Built { element, .. } => {
-                element
-                    .as_widget()
-                    .layout(&mut tree.children[0], renderer, limits)
-            }
-        }
+        state.layout(&self.initial, &mut tree.children[0], renderer, limits)
     }
 
     fn operate(
@@ -142,26 +117,14 @@ where
         let state = tree.state.downcast_mut::<Inner<Message>>();
 
         operation.custom(id, layout.bounds(), state);
-        operation.container(id, layout.bounds(), &mut |operation| match &state.view {
-            View::Failed(error)
-            | View::Built {
-                error: Some(error), ..
-            } => error.as_ref().as_widget().operate(
+        operation.container(id, layout.bounds(), &mut |operation| {
+            state.operate(
+                &self.initial,
                 &mut tree.children[0],
                 layout,
                 renderer,
                 operation,
-            ),
-            View::None => {
-                self.initial
-                    .as_widget()
-                    .operate(&mut tree.children[0], layout, renderer, operation)
-            }
-            View::Built { element, .. } => {
-                element
-                    .as_widget()
-                    .operate(&mut tree.children[0], layout, renderer, operation)
-            }
+            )
         });
     }
 
@@ -178,57 +141,17 @@ where
     ) {
         let state = tree.state.downcast_mut::<Inner<Message>>();
 
-        if state.invalidated {
-            shell.request_redraw();
-            state.invalidated = false;
-        }
-
-        match &mut state.view {
-            View::Failed(error)
-            | View::Built {
-                error: Some(error), ..
-            } => error.as_mut().as_widget_mut().update(
-                &mut tree.children[0],
-                event,
-                layout,
-                cursor,
-                renderer,
-                clipboard,
-                shell,
-                viewport,
-            ),
-            View::None => self.initial.as_widget_mut().update(
-                &mut tree.children[0],
-                event,
-                layout,
-                cursor,
-                renderer,
-                clipboard,
-                shell,
-                viewport,
-            ),
-            View::Built {
-                element, runtime, ..
-            } => {
-                let mut messages = vec![];
-                let mut guest = Shell::new(&mut messages);
-
-                element.as_widget_mut().update(
-                    &mut tree.children[0],
-                    event,
-                    layout,
-                    cursor,
-                    renderer,
-                    clipboard,
-                    &mut guest,
-                    viewport,
-                );
-
-                shell.merge(guest, move |message| {
-                    runtime.call(message.closure, message.data)
-                });
-            }
-        }
+        state.update(
+            &mut self.initial,
+            &mut tree.children[0],
+            event,
+            layout,
+            cursor,
+            renderer,
+            clipboard,
+            shell,
+            viewport,
+        );
     }
 
     fn mouse_interaction(
@@ -241,32 +164,14 @@ where
     ) -> mouse::Interaction {
         let state = tree.state.downcast_ref::<Inner<Message>>();
 
-        match &state.view {
-            View::Failed(error)
-            | View::Built {
-                error: Some(error), ..
-            } => error.as_ref().as_widget().mouse_interaction(
-                &tree.children[0],
-                layout,
-                cursor,
-                viewport,
-                renderer,
-            ),
-            View::None => self.initial.as_widget().mouse_interaction(
-                &tree.children[0],
-                layout,
-                cursor,
-                viewport,
-                renderer,
-            ),
-            View::Built { element, .. } => element.as_widget().mouse_interaction(
-                &tree.children[0],
-                layout,
-                cursor,
-                viewport,
-                renderer,
-            ),
-        }
+        state.mouse_interaction(
+            &self.initial,
+            &tree.children[0],
+            layout,
+            cursor,
+            viewport,
+            renderer,
+        )
     }
 
     fn draw(
@@ -281,38 +186,16 @@ where
     ) {
         let state = tree.state.downcast_ref::<Inner<Message>>();
 
-        match &state.view {
-            View::Failed(error)
-            | View::Built {
-                error: Some(error), ..
-            } => error.as_ref().as_widget().draw(
-                &tree.children[0],
-                renderer,
-                theme,
-                style,
-                layout,
-                cursor,
-                viewport,
-            ),
-            View::None => self.initial.as_widget().draw(
-                &tree.children[0],
-                renderer,
-                theme,
-                style,
-                layout,
-                cursor,
-                viewport,
-            ),
-            View::Built { element, .. } => element.as_widget().draw(
-                &tree.children[0],
-                renderer,
-                theme,
-                style,
-                layout,
-                cursor,
-                viewport,
-            ),
-        }
+        state.draw(
+            &self.initial,
+            &tree.children[0],
+            renderer,
+            theme,
+            style,
+            layout,
+            cursor,
+            viewport,
+        );
     }
 
     fn overlay<'b>(
@@ -325,28 +208,12 @@ where
     {
         let state = tree.state.downcast_mut::<Inner<Message>>();
 
-        match &mut state.view {
-            View::Failed(error)
-            | View::Built {
-                error: Some(error), ..
-            } => error.as_mut().as_widget_mut().overlay(
-                &mut tree.children[0],
-                layout,
-                renderer,
-                translation,
-            ),
-            View::None => self.initial.as_widget_mut().overlay(
-                &mut tree.children[0],
-                layout,
-                renderer,
-                translation,
-            ),
-            View::Built {
-                element, mapper, ..
-            } => element
-                .as_widget_mut()
-                .overlay(&mut tree.children[0], layout, renderer, translation)
-                .map(move |overlay| overlay.map(mapper)),
-        }
+        state.overlay(
+            &mut self.initial,
+            &mut tree.children[0],
+            layout,
+            renderer,
+            translation,
+        )
     }
 }
