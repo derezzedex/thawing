@@ -215,6 +215,31 @@ impl<'a> core::widget::HostColumn for guest::State<'a> {
     }
 }
 
+mod text {
+    #[derive(serde::Serialize, serde::Deserialize)]
+    struct Color {
+        r: f32,
+        g: f32,
+        b: f32,
+        a: f32,
+    }
+
+    #[derive(serde::Deserialize, serde::Serialize)]
+    pub struct Style {
+        color: Option<Color>,
+    }
+
+    impl From<Style> for iced_widget::text::Style {
+        fn from(style: Style) -> Self {
+            let color = style
+                .color
+                .map(|Color { r, g, b, a }| iced_core::Color { r, g, b, a });
+
+            Self { color }
+        }
+    }
+}
+
 impl<'a> core::widget::HostText for guest::State<'a> {
     fn new(&mut self, fragment: String) -> Resource<core::widget::Text> {
         self.push(Text::new(fragment))
@@ -239,8 +264,11 @@ impl<'a> core::widget::HostText for guest::State<'a> {
         let mut widget = self.get_widget::<Text, _>(&text);
 
         let runtime = self.runtime.as_ref().unwrap().clone();
-        widget = widget
-            .style(move |theme| runtime.call(style_fn.rep(), bincode::serialize(theme).unwrap()));
+        widget = widget.style(move |theme| {
+            runtime
+                .call::<text::Style>(style_fn.rep(), bincode::serialize(theme).unwrap())
+                .into()
+        });
 
         self.insert(text, widget)
     }

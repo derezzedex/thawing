@@ -230,8 +230,9 @@ where
         &'b mut self,
         initial: &'b mut Element<'_, Message>,
         tree: &'b mut Tree,
-        layout: Layout<'_>,
+        layout: Layout<'b>,
         renderer: &iced_widget::Renderer,
+        viewport: &iced_core::Rectangle,
         translation: iced_core::Vector,
     ) -> Option<iced_core::overlay::Element<'b, Message, iced_widget::Theme, iced_widget::Renderer>>
     {
@@ -239,18 +240,22 @@ where
             View::Failed(error)
             | View::Built {
                 error: Some(error), ..
-            } => error
-                .element
-                .as_widget_mut()
-                .overlay(tree, layout, renderer, translation),
-            View::None => initial
-                .as_widget_mut()
-                .overlay(tree, layout, renderer, translation),
+            } => {
+                error
+                    .element
+                    .as_widget_mut()
+                    .overlay(tree, layout, renderer, viewport, translation)
+            }
+            View::None => {
+                initial
+                    .as_widget_mut()
+                    .overlay(tree, layout, renderer, viewport, translation)
+            }
             View::Built {
                 element, mapper, ..
             } => element
                 .as_widget_mut()
-                .overlay(tree, layout, renderer, translation)
+                .overlay(tree, layout, renderer, viewport, translation)
                 .map(move |overlay| overlay.map(mapper)),
         }
     }

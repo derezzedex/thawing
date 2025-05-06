@@ -46,8 +46,8 @@ syn = { version = "2.0", features = ["full", "printing", "visit"] }
 quote = "1.0"
 prettyplease = "0.2"
 notify-debouncer-mini = "0.6"
-iced = { version = "0.14.0-dev", git = "https://github.com/derezzedex/iced.git", rev = "f9e2118030c31f5de537bb173920e40149d6f75f" }
-iced_core = { version = "0.14.0-dev", git = "https://github.com/derezzedex/iced.git", rev = "f9e2118030c31f5de537bb173920e40149d6f75f" }
-iced_futures = { version = "0.14.0-dev", git = "https://github.com/derezzedex/iced.git", rev = "f9e2118030c31f5de537bb173920e40149d6f75f" }
-iced_runtime = { version = "0.14.0-dev", git = "https://github.com/derezzedex/iced.git", rev = "f9e2118030c31f5de537bb173920e40149d6f75f" }
-iced_widget = { version = "0.14.0-dev", git = "https://github.com/derezzedex/iced.git", rev = "f9e2118030c31f5de537bb173920e40149d6f75f" }
+iced = { version = "0.14.0-dev", git = "https://github.com/derezzedex/iced.git", rev = "345bbccff5e4864e70eca8c702964cfe30efc738" }
+iced_core = { version = "0.14.0-dev", git = "https://github.com/derezzedex/iced.git", rev = "345bbccff5e4864e70eca8c702964cfe30efc738", features = ["serde"] }
+iced_futures = { version = "0.14.0-dev", git = "https://github.com/derezzedex/iced.git", rev = "345bbccff5e4864e70eca8c702964cfe30efc738" }
+iced_runtime = { version = "0.14.0-dev", git = "https://github.com/derezzedex/iced.git", rev = "345bbccff5e4864e70eca8c702964cfe30efc738" }
+iced_widget = { version = "0.14.0-dev", git = "https://github.com/derezzedex/iced.git", rev = "345bbccff5e4864e70eca8c702964cfe30efc738" }

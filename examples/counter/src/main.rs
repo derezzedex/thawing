@@ -4,8 +4,7 @@ use iced::{Center, Element};
 fn main() -> iced::Result {
     tracing_subscriber::fmt::init();
 
-    iced::application("A cool counter [thawing]", Counter::update, Counter::view)
-        .run_with(Counter::new)
+    iced::application(Counter::new, Counter::update, Counter::view).run()
 }
 
 const ID: &'static str = "thawing";

@@ -201,8 +201,9 @@ where
     fn overlay<'b>(
         &'b mut self,
         tree: &'b mut Tree,
-        layout: Layout<'_>,
+        layout: Layout<'b>,
         renderer: &iced_widget::Renderer,
+        viewport: &iced_core::Rectangle,
         translation: iced_core::Vector,
     ) -> Option<iced_core::overlay::Element<'b, Message, iced_widget::Theme, iced_widget::Renderer>>
     {
@@ -213,6 +214,7 @@ where
             &mut tree.children[0],
             layout,
             renderer,
+            viewport,
             translation,
         )
     }
