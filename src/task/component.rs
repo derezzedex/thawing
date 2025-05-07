@@ -7,10 +7,9 @@ use iced_core::widget::Operation;
 use iced_core::widget::operation;
 use iced_widget::runtime::{Task, task};
 
-use crate::guest;
 use crate::runtime;
 use crate::task::executor;
-use crate::widget::{Error, Id, Inner, View};
+use crate::widget::{Error, Id, State};
 
 pub fn fetch_caller_path<Message: Send + 'static>(id: &Id) -> Task<PathBuf> {
     struct GetPath<Message> {
@@ -28,8 +27,10 @@ pub fn fetch_caller_path<Message: Send + 'static>(id: &Id) -> Task<PathBuf> {
         ) {
             match id {
                 Some(id) if id == &self.id => {
-                    if let Some(state) = state.downcast_mut::<Inner<Message>>() {
-                        self.path = Some(state.caller.clone());
+                    if let Some(State::Loading { caller, .. }) =
+                        state.downcast_mut::<State<Message>>()
+                    {
+                        self.path = Some(caller.clone());
                         return;
                     }
                 }
@@ -123,36 +124,25 @@ pub fn create_runtime<Message: serde::de::DeserializeOwned + Send + 'static>(
         ) {
             match id {
                 Some(id) if id == &self.id.0 => {
-                    if let Some(state) = state.downcast_mut::<Inner<Message>>() {
-                        if let View::None | View::Failed(_) = &mut state.view {
-                            match &self.manifest {
-                                Err(error) => {
-                                    state.view = View::Failed(Error::new(error.clone()));
-                                    tracing::error!("Failed to create runtime {error:?}")
-                                }
-                                Ok(manifest) => {
-                                    let timer = std::time::Instant::now();
-                                    let runtime = runtime::Runtime::new(manifest);
-                                    let element = runtime.view(&state.bytes);
-                                    let mapper = {
-                                        let runtime = runtime.state();
-                                        Box::new(move |message: guest::Message| {
-                                            runtime.call(message.closure, message.data)
-                                        })
-                                    };
+                    if let Some(state) = state.downcast_mut::<State<Message>>() {
+                        match &self.manifest {
+                            Err(error) => {
+                                *state = State::Loaded(Err(Error::new(error.clone())));
+                                tracing::error!("Failed to create runtime {error:?}")
+                            }
+                            Ok(manifest) => {
+                                let timer = std::time::Instant::now();
 
-                                    state.view = View::Built {
-                                        runtime,
-                                        element,
-                                        mapper,
-                                        error: None,
-                                    };
-                                    state.invalidated = true;
-                                    tracing::info!(
-                                        "Building `runtime::State` took {:?}",
-                                        timer.elapsed()
-                                    );
-                                }
+                                let State::Loading { bytes, .. } = state else {
+                                    return;
+                                };
+                                let runtime = runtime::Runtime::new(manifest);
+                                *state = State::loaded(runtime, bytes);
+
+                                tracing::info!(
+                                    "Building `runtime::State` took {:?}",
+                                    timer.elapsed()
+                                );
                             }
                         }
                     }
@@ -203,24 +193,11 @@ pub fn reload<Message: Send + 'static>(id: impl Into<Id>, error: Option<crate::E
         ) {
             match id {
                 Some(id) if id == &self.id => {
-                    if let Some(state) = state.downcast_mut::<Inner<Message>>() {
-                        let timer = std::time::Instant::now();
-                        if let View::Built {
-                            runtime,
-                            error: current_error,
-                            ..
-                        } = &mut state.view
-                        {
-                            *current_error = self.error.take().map(Error::new);
-                            if self.error.is_some() {
-                                return;
-                            }
-
-                            runtime.reload();
-                            state.invalidated = true;
-                            tracing::info!("Reloaded in {:?}", timer.elapsed());
-                        }
+                    if let Some(state) = state.downcast_mut::<State<Message>>() {
+                        state.error(self.error.take().map(Error::new));
+                        state.reload();
                     }
+
                     return;
                 }
                 _ => {}

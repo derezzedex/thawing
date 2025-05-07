@@ -61,14 +61,6 @@ impl<'a> Runtime<'a> {
         }
     }
 
-    pub fn call<Message: serde::de::DeserializeOwned>(
-        &self,
-        closure: u32,
-        data: impl Into<Option<Bytes>>,
-    ) -> Message {
-        self.state.call(closure, data)
-    }
-
     pub fn view(&self, bytes: &Vec<u8>) -> Element<'a, guest::Message> {
         self.state.view(bytes)
     }

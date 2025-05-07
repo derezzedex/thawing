@@ -24,66 +24,93 @@ impl<Message> Error<Message> {
     }
 }
 
-pub(crate) enum View<Message> {
-    None,
-    Failed(Error<Message>),
-    Built {
-        runtime: runtime::Runtime<'static>,
-        element: Element<'static, guest::Message>,
-        mapper: Box<dyn Fn(guest::Message) -> Message>,
-        error: Option<Error<Message>>,
+pub enum State<Message> {
+    Loading {
+        bytes: Arc<Vec<u8>>,
+        caller: PathBuf,
     },
+    Loaded(Result<Inner<Message>, Error<Message>>),
 }
 
-pub(crate) struct Inner<Message> {
-    pub(crate) view: View<Message>,
-    pub(crate) invalidated: bool,
-    pub(crate) bytes: Arc<Vec<u8>>,
-    pub(crate) caller: PathBuf,
+pub struct Inner<Message> {
+    runtime: runtime::Runtime<'static>,
+    element: Element<'static, guest::Message>,
+    error: Option<Error<Message>>,
+    mapper: Box<dyn Fn(guest::Message) -> Message>,
+    bytes: Arc<Vec<u8>>,
+    invalidated: bool,
 }
 
-impl<Message> Inner<Message>
-where
-    Message: serde::de::DeserializeOwned + 'static,
-{
-    pub(crate) fn new(bytes: Arc<Vec<u8>>, caller: &PathBuf) -> Self {
+impl<Message> State<Message> {
+    pub fn new(bytes: &Arc<Vec<u8>>, caller: &PathBuf) -> Self {
+        let bytes = Arc::clone(bytes);
         let caller = caller.clone();
 
-        Self {
-            view: View::None,
-            invalidated: false,
-            bytes,
-            caller,
+        Self::Loading { bytes, caller }
+    }
+
+    pub fn error(&mut self, error: Option<Error<Message>>) {
+        match self {
+            State::Loading { .. } => {
+                if let Some(error) = error {
+                    *self = State::Loaded(Err(error))
+                }
+            }
+            State::Loaded(Err(previous)) => {
+                if let Some(error) = error {
+                    *previous = error
+                }
+            }
+            State::Loaded(Ok(inner)) => inner.error = error,
         }
     }
 
-    pub(crate) fn diff(
-        &mut self,
-        other: &Arc<Vec<u8>>,
-        initial: &Element<'_, Message>,
-        tree: &mut Tree,
-    ) {
-        match &self.view {
-            View::Failed(error)
-            | View::Built {
-                error: Some(error), ..
-            } => error.element.as_widget().diff(tree),
-            View::None => initial.as_widget().diff(tree),
-            View::Built { element, .. } => element.as_widget().diff(tree),
+    pub fn reload(&mut self) {
+        if let State::Loaded(Ok(inner)) = self {
+            let timer = std::time::Instant::now();
+            inner.runtime.reload();
+            tracing::info!("Reloaded in {:?}", timer.elapsed());
         }
+    }
+}
 
-        if Arc::ptr_eq(&self.bytes, other) {
-            return;
+impl<Message> State<Message>
+where
+    Message: serde::de::DeserializeOwned + 'static,
+{
+    pub fn loaded(runtime: runtime::Runtime<'static>, bytes: &Arc<Vec<u8>>) -> Self {
+        let bytes = Arc::clone(bytes);
+        let element = runtime.view(&bytes);
+        let mapper = {
+            let runtime = runtime.state();
+            Box::new(move |message: guest::Message| runtime.call(message.closure, message.data))
+        };
+
+        let inner = Inner {
+            runtime,
+            element,
+            error: None,
+            mapper,
+            bytes,
+            invalidated: true,
+        };
+
+        Self::Loaded(Ok(inner))
+    }
+
+    pub fn diff(&mut self, other: &Arc<Vec<u8>>, initial: &Element<'_, Message>, tree: &mut Tree) {
+        match self {
+            State::Loading { .. } => initial.as_widget().diff(tree),
+            State::Loaded(Err(error)) => error.element.as_widget().diff(tree),
+            State::Loaded(Ok(inner)) => {
+                if !Arc::ptr_eq(&inner.bytes, other) {
+                    inner.bytes = Arc::clone(other);
+                    inner.element = inner.runtime.view(other);
+                }
+
+                inner.element.as_widget().diff(tree)
+            }
         }
-
-        if let View::Built {
-            runtime, element, ..
-        } = &mut self.view
-        {
-            *element = runtime.view(other);
-        }
-
-        self.bytes = Arc::clone(other);
     }
 
     pub fn layout(
@@ -93,13 +120,10 @@ where
         renderer: &iced_widget::Renderer,
         limits: &layout::Limits,
     ) -> layout::Node {
-        match &self.view {
-            View::Failed(error)
-            | View::Built {
-                error: Some(error), ..
-            } => error.element.as_widget().layout(tree, renderer, limits),
-            View::None => initial.as_widget().layout(tree, renderer, limits),
-            View::Built { element, .. } => element.as_widget().layout(tree, renderer, limits),
+        match self {
+            State::Loaded(Err(error)) => error.element.as_widget().layout(tree, renderer, limits),
+            State::Loading { .. } => initial.as_widget().layout(tree, renderer, limits),
+            State::Loaded(Ok(inner)) => inner.element.as_widget().layout(tree, renderer, limits),
         }
     }
 
@@ -111,18 +135,16 @@ where
         renderer: &iced_widget::Renderer,
         operation: &mut dyn Operation,
     ) {
-        match &self.view {
-            View::Failed(error)
-            | View::Built {
-                error: Some(error), ..
-            } => error
+        match self {
+            State::Loaded(Err(error)) => error
                 .element
                 .as_widget()
                 .operate(tree, layout, renderer, operation),
-            View::None => initial
+            State::Loading { .. } => initial
                 .as_widget()
                 .operate(tree, layout, renderer, operation),
-            View::Built { element, .. } => element
+            State::Loaded(Ok(inner)) => inner
+                .element
                 .as_widget()
                 .operate(tree, layout, renderer, operation),
         }
@@ -140,31 +162,27 @@ where
         shell: &mut Shell<'_, Message>,
         viewport: &Rectangle,
     ) {
-        if self.invalidated {
-            shell.request_redraw();
-            self.invalidated = false;
-        }
+        match self {
+            State::Loaded(Err(error)) => error.element.as_widget_mut().update(
+                tree, event, layout, cursor, renderer, clipboard, shell, viewport,
+            ),
+            State::Loading { .. } => initial.as_widget_mut().update(
+                tree, event, layout, cursor, renderer, clipboard, shell, viewport,
+            ),
+            State::Loaded(Ok(inner)) => {
+                if inner.invalidated {
+                    shell.request_redraw();
+                    inner.invalidated = false;
+                }
 
-        match &mut self.view {
-            View::Failed(error)
-            | View::Built {
-                error: Some(error), ..
-            } => error.element.as_widget_mut().update(
-                tree, event, layout, cursor, renderer, clipboard, shell, viewport,
-            ),
-            View::None => initial.as_widget_mut().update(
-                tree, event, layout, cursor, renderer, clipboard, shell, viewport,
-            ),
-            View::Built {
-                element, runtime, ..
-            } => {
                 let mut messages = vec![];
                 let mut guest = Shell::new(&mut messages);
 
-                element.as_widget_mut().update(
+                inner.element.as_widget_mut().update(
                     tree, event, layout, cursor, renderer, clipboard, &mut guest, viewport,
                 );
 
+                let runtime = inner.runtime.state();
                 shell.merge(guest, move |message| {
                     runtime.call(message.closure, message.data)
                 });
@@ -181,18 +199,16 @@ where
         viewport: &Rectangle,
         renderer: &iced_widget::Renderer,
     ) -> mouse::Interaction {
-        match &self.view {
-            View::Failed(error)
-            | View::Built {
-                error: Some(error), ..
-            } => error
+        match self {
+            State::Loaded(Err(error)) => error
                 .element
                 .as_widget()
                 .mouse_interaction(tree, layout, cursor, viewport, renderer),
-            View::None => initial
+            State::Loading { .. } => initial
                 .as_widget()
                 .mouse_interaction(tree, layout, cursor, viewport, renderer),
-            View::Built { element, .. } => element
+            State::Loaded(Ok(inner)) => inner
+                .element
                 .as_widget()
                 .mouse_interaction(tree, layout, cursor, viewport, renderer),
         }
@@ -209,18 +225,16 @@ where
         cursor: mouse::Cursor,
         viewport: &Rectangle,
     ) {
-        match &self.view {
-            View::Failed(error)
-            | View::Built {
-                error: Some(error), ..
-            } => error
+        match self {
+            State::Loaded(Err(error)) => error
                 .element
                 .as_widget()
                 .draw(tree, renderer, theme, style, layout, cursor, viewport),
-            View::None => initial
+            State::Loading { .. } => initial
                 .as_widget()
                 .draw(tree, renderer, theme, style, layout, cursor, viewport),
-            View::Built { element, .. } => element
+            State::Loaded(Ok(inner)) => inner
+                .element
                 .as_widget()
                 .draw(tree, renderer, theme, style, layout, cursor, viewport),
         }
@@ -236,27 +250,23 @@ where
         translation: iced_core::Vector,
     ) -> Option<iced_core::overlay::Element<'b, Message, iced_widget::Theme, iced_widget::Renderer>>
     {
-        match &mut self.view {
-            View::Failed(error)
-            | View::Built {
-                error: Some(error), ..
-            } => {
+        match self {
+            State::Loaded(Err(error)) => {
                 error
                     .element
                     .as_widget_mut()
                     .overlay(tree, layout, renderer, viewport, translation)
             }
-            View::None => {
+            State::Loading { .. } => {
                 initial
                     .as_widget_mut()
                     .overlay(tree, layout, renderer, viewport, translation)
             }
-            View::Built {
-                element, mapper, ..
-            } => element
+            State::Loaded(Ok(inner)) => inner
+                .element
                 .as_widget_mut()
                 .overlay(tree, layout, renderer, viewport, translation)
-                .map(move |overlay| overlay.map(mapper)),
+                .map(|overlay| overlay.map(&inner.mapper)),
         }
     }
 }

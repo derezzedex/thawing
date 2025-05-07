@@ -11,9 +11,9 @@ use iced_core::{layout, mouse, renderer};
 
 use crate::Element;
 pub use id::Id;
-pub(crate) use state::{Error, Inner, View};
+pub(crate) use state::{Error, State};
 
-pub struct Thawing<'a, Message, State = ()> {
+pub struct Thawing<'a, Message, Data = ()> {
     id: Option<Id>,
     width: Length,
     height: Length,
@@ -22,10 +22,10 @@ pub struct Thawing<'a, Message, State = ()> {
     initial: Element<'a, Message>,
     bytes: Arc<Vec<u8>>,
 
-    state: PhantomData<&'a State>,
+    state: PhantomData<&'a Data>,
 }
 
-impl<'a, Message, State> Thawing<'a, Message, State> {
+impl<'a, Message, Data> Thawing<'a, Message, Data> {
     pub fn from_view(element: impl Into<Element<'a, Message>>, file: &'static str) -> Self {
         Self {
             id: None,
@@ -44,40 +44,40 @@ impl<'a, Message, State> Thawing<'a, Message, State> {
     }
 }
 
-impl<'a, Message, State> Thawing<'a, Message, State>
+impl<'a, Message, Data> Thawing<'a, Message, Data>
 where
-    State: serde::Serialize,
+    Data: serde::Serialize,
 {
-    pub fn state<'b>(mut self, state: &'b State) -> Self {
+    pub fn state<'b>(mut self, state: &'b Data) -> Self {
         self.bytes = Arc::new(bincode::serialize(state).unwrap());
         self
     }
 }
 
-impl<'a, Message, State> From<Thawing<'a, Message, State>> for Element<'a, Message>
+impl<'a, Message, Data> From<Thawing<'a, Message, Data>> for Element<'a, Message>
 where
-    State: serde::Serialize + 'static,
+    Data: serde::Serialize + 'static,
     Message: 'static + serde::Serialize + serde::de::DeserializeOwned,
 {
-    fn from(widget: Thawing<'a, Message, State>) -> Self {
+    fn from(widget: Thawing<'a, Message, Data>) -> Self {
         Element::new(widget)
     }
 }
 
-impl<'a, Message, State> Widget<Message, iced_widget::Theme, iced_widget::Renderer>
-    for Thawing<'a, Message, State>
+impl<'a, Message, Data> Widget<Message, iced_widget::Theme, iced_widget::Renderer>
+    for Thawing<'a, Message, Data>
 where
-    State: serde::Serialize + 'static,
+    Data: serde::Serialize + 'static,
     Message: serde::Serialize + serde::de::DeserializeOwned + 'static,
 {
     fn tag(&self) -> tree::Tag {
         struct Tag<T>(T);
 
-        tree::Tag::of::<Tag<State>>()
+        tree::Tag::of::<Tag<Data>>()
     }
 
     fn state(&self) -> tree::State {
-        let state = Inner::<Message>::new(Arc::clone(&self.bytes), &self.caller);
+        let state = State::<Message>::new(&self.bytes, &self.caller);
         tree::State::new(state)
     }
 
@@ -86,7 +86,7 @@ where
     }
 
     fn diff(&self, tree: &mut Tree) {
-        let state = tree.state.downcast_mut::<Inner<Message>>();
+        let state = tree.state.downcast_mut::<State<Message>>();
 
         state.diff(&self.bytes, &self.initial, &mut tree.children[0]);
     }
@@ -101,7 +101,7 @@ where
         renderer: &iced_widget::Renderer,
         limits: &layout::Limits,
     ) -> layout::Node {
-        let state = tree.state.downcast_ref::<Inner<Message>>();
+        let state = tree.state.downcast_ref::<State<Message>>();
 
         state.layout(&self.initial, &mut tree.children[0], renderer, limits)
     }
@@ -114,7 +114,7 @@ where
         operation: &mut dyn Operation,
     ) {
         let id = self.id.as_ref().map(|id| &id.0);
-        let state = tree.state.downcast_mut::<Inner<Message>>();
+        let state = tree.state.downcast_mut::<State<Message>>();
 
         operation.custom(id, layout.bounds(), state);
         operation.container(id, layout.bounds(), &mut |operation| {
@@ -139,7 +139,7 @@ where
         shell: &mut Shell<'_, Message>,
         viewport: &Rectangle,
     ) {
-        let state = tree.state.downcast_mut::<Inner<Message>>();
+        let state = tree.state.downcast_mut::<State<Message>>();
 
         state.update(
             &mut self.initial,
@@ -162,7 +162,7 @@ where
         viewport: &Rectangle,
         renderer: &iced_widget::Renderer,
     ) -> mouse::Interaction {
-        let state = tree.state.downcast_ref::<Inner<Message>>();
+        let state = tree.state.downcast_ref::<State<Message>>();
 
         state.mouse_interaction(
             &self.initial,
@@ -184,7 +184,7 @@ where
         cursor: mouse::Cursor,
         viewport: &Rectangle,
     ) {
-        let state = tree.state.downcast_ref::<Inner<Message>>();
+        let state = tree.state.downcast_ref::<State<Message>>();
 
         state.draw(
             &self.initial,
@@ -207,7 +207,7 @@ where
         translation: iced_core::Vector,
     ) -> Option<iced_core::overlay::Element<'b, Message, iced_widget::Theme, iced_widget::Renderer>>
     {
-        let state = tree.state.downcast_mut::<Inner<Message>>();
+        let state = tree.state.downcast_mut::<State<Message>>();
 
         state.overlay(
             &mut self.initial,
