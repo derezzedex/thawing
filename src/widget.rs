@@ -18,10 +18,10 @@ pub struct Thawing<'a, Message, Data = ()> {
     width: Length,
     height: Length,
 
-    caller: PathBuf,
-    initial: Element<'a, Message>,
-    bytes: Arc<Vec<u8>>,
+    caller: Result<PathBuf, crate::Error>,
+    bytes: Result<Arc<Vec<u8>>, crate::Error>,
 
+    initial: Element<'a, Message>,
     state: PhantomData<&'a Data>,
 }
 
@@ -29,9 +29,9 @@ impl<'a, Message, Data> Thawing<'a, Message, Data> {
     pub fn from_view(element: impl Into<Element<'a, Message>>, file: &'static str) -> Self {
         Self {
             id: None,
-            caller: Path::new(file).canonicalize().unwrap(),
+            caller: Path::new(file).canonicalize().map_err(crate::Error::from),
             initial: element.into(),
-            bytes: Arc::new(Vec::new()),
+            bytes: Ok(Arc::new(Vec::new())),
             width: Length::Shrink,
             height: Length::Shrink,
             state: PhantomData,
@@ -49,7 +49,9 @@ where
     Data: serde::Serialize,
 {
     pub fn state<'b>(mut self, state: &'b Data) -> Self {
-        self.bytes = Arc::new(bincode::serialize(state).unwrap());
+        self.bytes = bincode::serialize(state)
+            .map(Arc::new)
+            .map_err(crate::Error::from);
         self
     }
 }

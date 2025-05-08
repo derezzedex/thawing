@@ -127,7 +127,7 @@ pub fn create_runtime<Message: serde::de::DeserializeOwned + Send + 'static>(
                     if let Some(state) = state.downcast_mut::<State<Message>>() {
                         match &self.manifest {
                             Err(error) => {
-                                *state = State::Loaded(Err(Error::new(error.clone())));
+                                *state = State::failed(error);
                                 tracing::error!("Failed to create runtime {error:?}")
                             }
                             Ok(manifest) => {
@@ -136,8 +136,12 @@ pub fn create_runtime<Message: serde::de::DeserializeOwned + Send + 'static>(
                                 let State::Loading { bytes, .. } = state else {
                                     return;
                                 };
+
                                 let runtime = runtime::Runtime::new(manifest);
-                                *state = State::loaded(runtime, bytes);
+                                *state = match runtime {
+                                    Ok(runtime) => State::loaded(runtime, bytes),
+                                    Err(error) => State::failed(&error),
+                                };
 
                                 tracing::info!(
                                     "Building `runtime::State` took {:?}",

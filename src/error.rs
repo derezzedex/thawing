@@ -1,6 +1,8 @@
 use std::io;
 use std::sync::Arc;
 
+use crate::runtime;
+
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum Error {
     #[error("io failed with: {0}")]
@@ -13,6 +15,24 @@ pub enum Error {
     RecvFailed,
     #[error("failed to send on a channel")]
     SendFailed,
+    #[error("wasm engine failed: {0}")]
+    WasmEngine(Arc<wasmtime::Error>),
+    #[error("runtime failed: {0}")]
+    Runtime(runtime::Error),
+    #[error("serialization failed: {0}")]
+    Serialization(Arc<bincode::Error>),
+}
+
+impl From<bincode::Error> for Error {
+    fn from(error: bincode::Error) -> Self {
+        Self::Serialization(Arc::new(error))
+    }
+}
+
+impl From<wasmtime::Error> for Error {
+    fn from(error: wasmtime::Error) -> Self {
+        Self::WasmEngine(Arc::new(error))
+    }
 }
 
 impl From<io::Error> for Error {
@@ -54,5 +74,11 @@ impl From<ParserError> for Error {
 impl From<syn::Error> for Error {
     fn from(error: syn::Error) -> Self {
         Self::Parsing(ParserError::Syn(Arc::new(error)))
+    }
+}
+
+impl From<runtime::Error> for Error {
+    fn from(error: runtime::Error) -> Self {
+        Self::Runtime(error)
     }
 }

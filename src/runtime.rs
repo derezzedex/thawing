@@ -11,6 +11,12 @@ use crate::guest;
 pub type Empty = ();
 pub type Bytes = Vec<u8>;
 
+#[derive(Debug, Clone, thiserror::Error)]
+pub enum Error {
+    #[error("root element not found")]
+    RootElementNotFound,
+}
+
 wasmtime::component::bindgen!({
     world: "thawing",
     with: {
@@ -31,15 +37,17 @@ pub(crate) struct Runtime<'a> {
 }
 
 impl<'a> Runtime<'a> {
-    pub fn reload(&mut self) {
+    pub fn reload(&mut self) -> Result<(), crate::Error> {
         self.state
-            .reload(&self.engine, &self.linker, &self.binary_path);
+            .reload(&self.engine, &self.linker, &self.binary_path)?;
         self.state.fill_store();
+
+        Ok(())
     }
 }
 
 impl<'a> Runtime<'a> {
-    pub fn new(manifest: &PathBuf) -> Self {
+    pub fn new(manifest: &PathBuf) -> Result<Self, crate::Error> {
         let binary_path = manifest
             .join("target")
             .join("wasm32-unknown-unknown")
@@ -48,20 +56,20 @@ impl<'a> Runtime<'a> {
 
         let engine = Engine::default();
         let mut linker = Linker::new(&engine);
-        Thawing::add_to_linker(&mut linker, |state| state).unwrap();
+        Thawing::add_to_linker(&mut linker, |state| state)?;
 
-        let mut state = State::new(&engine, &linker, &binary_path);
+        let mut state = State::new(&engine, &linker, &binary_path)?;
         state.fill_store();
 
-        Self {
+        Ok(Self {
             engine,
             linker,
             state,
             binary_path,
-        }
+        })
     }
 
-    pub fn view(&self, bytes: &Vec<u8>) -> Element<'a, guest::Message> {
+    pub fn view(&self, bytes: &Vec<u8>) -> Result<Element<'a, guest::Message>, crate::Error> {
         self.state.view(bytes)
     }
 
@@ -81,27 +89,26 @@ impl<'a> State<'a> {
         engine: &Engine,
         linker: &Linker<guest::State<'a>>,
         binary_path: impl AsRef<Path>,
-    ) -> Self {
-        let component = Component::from_file(&engine, binary_path).unwrap();
+    ) -> Result<Self, crate::Error> {
+        let component = Component::from_file(&engine, binary_path)?;
 
         let mut store = Store::new(&engine, guest::State::new());
-        let bindings = Thawing::instantiate(&mut store, &component, linker).unwrap();
+        let bindings = Thawing::instantiate(&mut store, &component, linker)?;
 
         let table = bindings
             .thawing_core_guest()
             .table()
-            .call_constructor(&mut store)
-            .unwrap();
+            .call_constructor(&mut store)?;
 
         let store = Rc::new(RefCell::new(store));
         let bindings = Rc::new(RefCell::new(bindings));
         let table = Rc::new(RefCell::new(table));
 
-        Self {
+        Ok(Self {
             store,
             bindings,
             table,
-        }
+        })
     }
 
     pub(crate) fn call<Message: serde::de::DeserializeOwned>(
@@ -149,20 +156,21 @@ impl<'a> State<'a> {
         engine: &Engine,
         linker: &Linker<guest::State<'a>>,
         binary_path: impl AsRef<Path>,
-    ) {
-        let component = Component::from_file(&engine, binary_path).unwrap();
+    ) -> Result<(), crate::Error> {
+        let component = Component::from_file(&engine, binary_path)?;
         let mut store = self.store.borrow_mut();
         let mut bindings = self.bindings.borrow_mut();
         *store = Store::new(&engine, guest::State::new());
-        *bindings = Thawing::instantiate(&mut *store, &component, &linker).unwrap();
+        *bindings = Thawing::instantiate(&mut *store, &component, &linker)?;
 
         let mut table = self.table.borrow_mut();
 
         *table = bindings
             .thawing_core_guest()
             .table()
-            .call_constructor(&mut *store)
-            .unwrap();
+            .call_constructor(&mut *store)?;
+
+        Ok(())
     }
 
     fn fill_store(&mut self) {
@@ -171,10 +179,10 @@ impl<'a> State<'a> {
 }
 
 impl<'a> State<'a> {
-    fn view(&self, bytes: &Vec<u8>) -> Element<'a, guest::Message> {
+    fn view(&self, bytes: &Vec<u8>) -> Result<Element<'a, guest::Message>, crate::Error> {
         let mut store = self.store.borrow_mut();
         let mut table = self.table.borrow_mut();
-        table.resource_drop(&mut *store).unwrap();
+        table.resource_drop(&mut *store)?;
 
         store.data_mut().element.clear();
 
@@ -183,26 +191,29 @@ impl<'a> State<'a> {
             .borrow()
             .thawing_core_guest()
             .table()
-            .call_constructor(&mut *store)
-            .unwrap();
+            .call_constructor(&mut *store)?;
 
         let app = self
             .bindings
             .borrow()
             .thawing_core_guest()
             .app()
-            .call_constructor(&mut *store, bytes)
-            .unwrap();
+            .call_constructor(&mut *store, bytes)?;
 
         let view = self
             .bindings
             .borrow()
             .thawing_core_guest()
             .app()
-            .call_view(&mut *store, app)
-            .unwrap();
+            .call_view(&mut *store, app)?;
 
-        store.data_mut().element.remove(&view.rep()).unwrap()
+        let element = store
+            .data_mut()
+            .element
+            .remove(&view.rep())
+            .ok_or(crate::Error::Runtime(Error::RootElementNotFound))?;
+
+        Ok(element)
     }
 }
 
