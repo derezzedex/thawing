@@ -18,7 +18,7 @@ use crate::task::executor;
 
 pub fn init_directory() -> Task<Result<PathBuf, crate::Error>> {
     executor::try_spawn_blocking(|mut sender| {
-        let manifest = tempfile::tempdir()?.into_path().join("component");
+        let manifest = tempfile::tempdir()?.keep().join("component");
 
         let timer = std::time::Instant::now();
         fs::create_dir(&manifest)?;
