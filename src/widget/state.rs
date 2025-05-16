@@ -222,6 +222,8 @@ impl<Message> State<Message> {
                 return;
             }
 
+            inner.element = inner.runtime.view(&inner.bytes).map_err(Error::new);
+            inner.invalidated = true;
             tracing::info!("Reloaded in {:?}", timer.elapsed());
         }
     }

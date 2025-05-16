@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-use wasmtime::component::{Component, Linker, Resource, ResourceAny};
+use wasmtime::component::{Component, Linker, Resource, ResourceAny, ResourceTable};
 use wasmtime::{Engine, Store};
 
 use crate::Element;
@@ -185,6 +185,7 @@ impl<'a> State<'a> {
         table.resource_drop(&mut *store)?;
 
         store.data_mut().element.clear();
+        store.data_mut().table = ResourceTable::new();
 
         *table = self
             .bindings
