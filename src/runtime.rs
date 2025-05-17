@@ -1,6 +1,5 @@
-use std::cell::RefCell;
 use std::path::{Path, PathBuf};
-use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 
 use wasmtime::component::{Component, Linker, Resource, ResourceAny, ResourceTable};
 use wasmtime::{Engine, Store};
@@ -31,7 +30,7 @@ wasmtime::component::bindgen!({
 
 pub(crate) struct Runtime<'a> {
     engine: Engine,
-    linker: Linker<guest::State<'a>>,
+    linker: Arc<Linker<guest::State<'a>>>,
     state: State<'a>,
     binary_path: PathBuf,
 }
@@ -61,6 +60,8 @@ impl<'a> Runtime<'a> {
         let mut state = State::new(&engine, &linker, &binary_path)?;
         state.fill_store();
 
+        let linker = Arc::new(linker);
+
         Ok(Self {
             engine,
             linker,
@@ -79,9 +80,9 @@ impl<'a> Runtime<'a> {
 }
 
 pub(crate) struct State<'a> {
-    pub(crate) store: Rc<RefCell<Store<guest::State<'a>>>>,
-    pub(crate) bindings: Rc<RefCell<Thawing>>,
-    pub(crate) table: Rc<RefCell<ResourceAny>>,
+    pub(crate) store: Arc<Mutex<Store<guest::State<'a>>>>,
+    pub(crate) bindings: Arc<Thawing>,
+    pub(crate) table: Arc<ResourceAny>,
 }
 
 impl<'a> State<'a> {
@@ -100,9 +101,9 @@ impl<'a> State<'a> {
             .table()
             .call_constructor(&mut store)?;
 
-        let store = Rc::new(RefCell::new(store));
-        let bindings = Rc::new(RefCell::new(bindings));
-        let table = Rc::new(RefCell::new(table));
+        let store = Arc::new(Mutex::new(store));
+        let bindings = Arc::new(bindings);
+        let table = Arc::new(table);
 
         Ok(Self {
             store,
@@ -126,12 +127,11 @@ impl<'a> State<'a> {
 
     fn call_stateless(&self, closure: u32) -> Vec<u8> {
         self.bindings
-            .borrow()
             .thawing_core_guest()
             .table()
             .call_call(
-                &mut *self.store.borrow_mut(),
-                *self.table.borrow(),
+                &mut *self.store.lock().unwrap(),
+                *self.table,
                 Resource::new_own(closure),
             )
             .unwrap()
@@ -139,12 +139,11 @@ impl<'a> State<'a> {
 
     fn call_stateful(&self, closure: u32, bytes: Bytes) -> Vec<u8> {
         self.bindings
-            .borrow_mut()
             .thawing_core_guest()
             .table()
             .call_call_with(
-                &mut *self.store.borrow_mut(),
-                *self.table.borrow(),
+                &mut *self.store.lock().unwrap(),
+                *self.table,
                 Resource::new_own(closure),
                 &bytes,
             )
@@ -158,52 +157,40 @@ impl<'a> State<'a> {
         binary_path: impl AsRef<Path>,
     ) -> Result<(), crate::Error> {
         let component = Component::from_file(&engine, binary_path)?;
-        let mut store = self.store.borrow_mut();
-        let mut bindings = self.bindings.borrow_mut();
+        let mut store = self.store.lock().unwrap();
         *store = Store::new(&engine, guest::State::new());
-        *bindings = Thawing::instantiate(&mut *store, &component, &linker)?;
+        self.bindings = Arc::new(Thawing::instantiate(&mut *store, &component, &linker)?);
 
-        let mut table = self.table.borrow_mut();
-
-        *table = bindings
+        let table = self
+            .bindings
             .thawing_core_guest()
             .table()
             .call_constructor(&mut *store)?;
+        self.table = Arc::new(table);
 
         Ok(())
     }
 
     fn fill_store(&mut self) {
-        self.store.borrow_mut().data_mut().runtime = Some(self.clone());
+        self.store.lock().unwrap().data_mut().runtime = Some(self.clone());
     }
 }
 
 impl<'a> State<'a> {
     fn view(&self, bytes: &Vec<u8>) -> Result<Element<'a, guest::Message>, crate::Error> {
-        let mut store = self.store.borrow_mut();
-        let mut table = self.table.borrow_mut();
-        table.resource_drop(&mut *store)?;
+        let mut store = self.store.lock().unwrap();
 
         store.data_mut().element.clear();
         store.data_mut().table = ResourceTable::new();
 
-        *table = self
-            .bindings
-            .borrow()
-            .thawing_core_guest()
-            .table()
-            .call_constructor(&mut *store)?;
-
         let app = self
             .bindings
-            .borrow()
             .thawing_core_guest()
             .app()
             .call_constructor(&mut *store, bytes)?;
 
         let view = self
             .bindings
-            .borrow()
             .thawing_core_guest()
             .app()
             .call_view(&mut *store, app)?;

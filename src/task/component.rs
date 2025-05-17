@@ -103,19 +103,33 @@ pub fn build(manifest: Result<PathBuf, crate::Error>) -> Task<Result<PathBuf, cr
     })
 }
 
-pub fn create_runtime<Message: serde::de::DeserializeOwned + Send + 'static>(
-    id: &Id,
+pub fn create_runtime(
     manifest: Result<PathBuf, crate::Error>,
-) -> Task<(Id, Result<PathBuf, crate::Error>)> {
-    struct CreateRuntime<Message> {
+) -> Task<Result<runtime::Runtime<'static>, crate::Error>> {
+    executor::try_spawn_blocking(move |mut sender| {
+        let timer = std::time::Instant::now();
+        let runtime = manifest
+            .as_ref()
+            .map(runtime::Runtime::new)
+            .map_err(|err| err.clone())??;
+        let _ = sender.try_send(runtime);
+        tracing::info!("Building `runtime::State` took {:?}", timer.elapsed());
+
+        Ok(())
+    })
+}
+
+pub fn set_runtime<Message: serde::de::DeserializeOwned + Send + 'static>(
+    id: &Id,
+    runtime: Result<runtime::Runtime<'static>, crate::Error>,
+) -> Task<()> {
+    struct SetRuntime<Message> {
         id: Id,
-        manifest: Result<PathBuf, crate::Error>,
+        runtime: Result<Option<runtime::Runtime<'static>>, crate::Error>,
         message: PhantomData<Message>,
     }
 
-    impl<Message: serde::de::DeserializeOwned + Send + 'static>
-        Operation<(Id, Result<PathBuf, crate::Error>)> for CreateRuntime<Message>
-    {
+    impl<Message: serde::de::DeserializeOwned + Send + 'static> Operation<()> for SetRuntime<Message> {
         fn custom(
             &mut self,
             id: Option<&iced_core::widget::Id>,
@@ -125,30 +139,14 @@ pub fn create_runtime<Message: serde::de::DeserializeOwned + Send + 'static>(
             match id {
                 Some(id) if id == &self.id.0 => {
                     if let Some(state) = state.downcast_mut::<State<Message>>() {
-                        match &self.manifest {
-                            Err(error) => {
-                                *state = State::failed(error);
-                                tracing::error!("Failed to create runtime {error:?}")
-                            }
-                            Ok(manifest) => {
-                                let timer = std::time::Instant::now();
+                        let State::Loading { bytes, .. } = state else {
+                            return;
+                        };
 
-                                let State::Loading { bytes, .. } = state else {
-                                    return;
-                                };
-
-                                let runtime = runtime::Runtime::new(manifest);
-                                *state = match runtime {
-                                    Ok(runtime) => State::loaded(runtime, bytes),
-                                    Err(error) => State::failed(&error),
-                                };
-
-                                tracing::info!(
-                                    "Building `runtime::State` took {:?}",
-                                    timer.elapsed()
-                                );
-                            }
-                        }
+                        *state = match self.runtime.as_mut().map(Option::take).map(Option::unwrap) {
+                            Ok(runtime) => State::loaded(runtime, bytes),
+                            Err(error) => State::failed(&error),
+                        };
                     }
                     return;
                 }
@@ -160,21 +158,19 @@ pub fn create_runtime<Message: serde::de::DeserializeOwned + Send + 'static>(
             &mut self,
             _id: Option<&iced_core::widget::Id>,
             _bounds: Rectangle,
-            operate_on_children: &mut dyn FnMut(
-                &mut dyn Operation<(Id, Result<PathBuf, crate::Error>)>,
-            ),
+            operate_on_children: &mut dyn FnMut(&mut dyn Operation<()>),
         ) {
             operate_on_children(self)
         }
 
-        fn finish(&self) -> operation::Outcome<(Id, Result<PathBuf, crate::Error>)> {
-            operation::Outcome::Some((self.id.clone(), self.manifest.clone()))
+        fn finish(&self) -> operation::Outcome<()> {
+            operation::Outcome::Some(())
         }
     }
 
-    task::widget(CreateRuntime {
+    task::widget(SetRuntime {
         id: id.clone(),
-        manifest,
+        runtime: runtime.map(Some),
         message: PhantomData::<Message>,
     })
 }

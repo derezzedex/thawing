@@ -1,5 +1,5 @@
 mod component;
-mod executor;
+pub(crate) mod executor;
 mod file;
 
 use iced_widget::runtime::Task;
@@ -18,19 +18,30 @@ pub fn thaw<Message: serde::de::DeserializeOwned + Send + 'static>(
         file::init_directory()
             .then(move |manifest| file::parse_and_write(&target, manifest))
             .then(component::build)
-            .then(move |manifest| component::create_runtime::<Message>(&id, manifest))
-            .then(move |(id, manifest)| {
+            .then(move |manifest| {
+                let idx = id.clone();
                 let caller = caller.clone();
 
-                Task::stream(file::watch(caller.clone())).then(move |_| {
-                    let id = id.clone();
+                component::create_runtime(manifest.clone())
+                    .then(move |runtime| component::set_runtime::<Message>(&idx, runtime))
+                    .then({
+                        let id = id.clone();
+                        move |_| {
+                            let id = id.clone();
+                            let caller = caller.clone();
+                            let manifest = manifest.clone();
 
-                    file::parse_and_write(&caller, manifest.clone())
-                        .then(component::build)
-                        .then(move |manifest| {
-                            component::reload::<Message>(id.clone(), manifest.err())
-                        })
-                })
+                            Task::stream(file::watch(caller.clone())).then(move |_| {
+                                let id = id.clone();
+
+                                file::parse_and_write(&caller, manifest.clone())
+                                    .then(component::build)
+                                    .then(move |manifest| {
+                                        component::reload::<Message>(id.clone(), manifest.err())
+                                    })
+                            })
+                        }
+                    })
             })
     })
 }
