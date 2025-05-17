@@ -178,9 +178,60 @@ pub fn set_runtime<Message: serde::de::DeserializeOwned + Send + 'static>(
 pub fn reload<Message: Send + 'static>(id: impl Into<Id>, error: Option<crate::Error>) -> Task<()> {
     let id = id.into();
 
+    struct FetchEngine<Message> {
+        id: iced_core::widget::Id,
+        engine: Option<runtime::Engine<'static>>,
+        error: Option<crate::Error>,
+        message: PhantomData<Message>,
+    }
+
+    impl<Message: Send + 'static> Operation<runtime::Engine<'static>> for FetchEngine<Message> {
+        fn custom(
+            &mut self,
+            id: Option<&iced_core::widget::Id>,
+            _bounds: Rectangle,
+            state: &mut dyn std::any::Any,
+        ) {
+            match id {
+                Some(id) if id == &self.id => {
+                    if let Some(state) = state.downcast_mut::<State<Message>>() {
+                        state.error(self.error.clone().map(Error::new));
+                        if self.error.is_some() {
+                            return;
+                        }
+
+                        if let State::Loaded(Ok(inner)) = state {
+                            self.engine = Some(inner.engine());
+                        }
+                    }
+
+                    return;
+                }
+                _ => {}
+            }
+        }
+
+        fn container(
+            &mut self,
+            _id: Option<&iced_core::widget::Id>,
+            _bounds: Rectangle,
+            operate_on_children: &mut dyn FnMut(&mut dyn Operation<runtime::Engine<'static>>),
+        ) {
+            operate_on_children(self)
+        }
+
+        fn finish(&self) -> operation::Outcome<runtime::Engine<'static>> {
+            self.engine
+                .as_ref()
+                .map(runtime::Engine::clone)
+                .map(operation::Outcome::Some)
+                .unwrap_or(operation::Outcome::None)
+        }
+    }
+
     struct Reload<Message> {
         id: iced_core::widget::Id,
-        error: Option<crate::Error>,
+        state: Result<runtime::State<'static>, crate::Error>,
         message: PhantomData<Message>,
     }
 
@@ -194,8 +245,8 @@ pub fn reload<Message: Send + 'static>(id: impl Into<Id>, error: Option<crate::E
             match id {
                 Some(id) if id == &self.id => {
                     if let Some(state) = state.downcast_mut::<State<Message>>() {
-                        state.error(self.error.take().map(Error::new));
-                        state.reload();
+                        state.error(self.state.as_ref().err().cloned().map(Error::new));
+                        state.reload(self.state.clone());
                     }
 
                     return;
@@ -218,9 +269,25 @@ pub fn reload<Message: Send + 'static>(id: impl Into<Id>, error: Option<crate::E
         }
     }
 
-    task::widget(Reload {
-        id: id.into(),
+    task::widget(FetchEngine {
+        id: id.clone().into(),
+        engine: None,
         error,
         message: PhantomData::<Message>,
+    })
+    .then(|engine| {
+        executor::try_spawn_blocking(move |mut sender| {
+            let engine = runtime::State::new(&engine)?;
+            let _ = sender.try_send(engine);
+
+            Ok(())
+        })
+    })
+    .then(move |state| {
+        task::widget(Reload {
+            id: id.clone().into(),
+            state,
+            message: PhantomData::<Message>,
+        })
     })
 }

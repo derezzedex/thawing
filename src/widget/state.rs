@@ -36,6 +36,12 @@ pub struct Inner<Message> {
     invalidated: bool,
 }
 
+impl<Message> Inner<Message> {
+    pub fn engine(&self) -> runtime::Engine<'static> {
+        self.runtime.engine()
+    }
+}
+
 impl<Message> Inner<Message>
 where
     Message: serde::de::DeserializeOwned + 'static,
@@ -213,10 +219,10 @@ impl<Message> State<Message> {
         }
     }
 
-    pub fn reload(&mut self) {
+    pub fn reload(&mut self, state: Result<runtime::State<'static>, crate::Error>) {
         if let State::Loaded(Ok(inner)) = self {
             let timer = std::time::Instant::now();
-            if let Err(error) = inner.runtime.reload() {
+            if let Err(error) = inner.runtime.reload(state) {
                 tracing::error!("Failed to reload: {error:?}");
                 inner.element = Err(Error::new(error));
                 return;

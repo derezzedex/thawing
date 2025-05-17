@@ -1,8 +1,8 @@
-use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex, PoisonError};
 
+use wasmtime::Store;
 use wasmtime::component::{Component, Linker, Resource, ResourceAny, ResourceTable};
-use wasmtime::{Engine, Store};
 
 use crate::Element;
 use crate::guest;
@@ -14,6 +14,14 @@ pub type Bytes = Vec<u8>;
 pub enum Error {
     #[error("root element not found")]
     RootElementNotFound,
+    #[error("mutex poisoned")]
+    MutexPoisoned,
+}
+
+impl<T> From<PoisonError<T>> for Error {
+    fn from(_value: PoisonError<T>) -> Self {
+        Self::MutexPoisoned
+    }
 }
 
 wasmtime::component::bindgen!({
@@ -28,18 +36,35 @@ wasmtime::component::bindgen!({
     },
 });
 
-pub(crate) struct Runtime<'a> {
-    engine: Engine,
+pub(crate) struct Engine<'a> {
+    engine: wasmtime::Engine,
     linker: Arc<Linker<guest::State<'a>>>,
-    state: State<'a>,
     binary_path: PathBuf,
 }
 
+impl<'a> Clone for Engine<'a> {
+    fn clone(&self) -> Self {
+        Self {
+            engine: self.engine.clone(),
+            linker: Arc::clone(&self.linker),
+            binary_path: self.binary_path.clone(),
+        }
+    }
+}
+
+pub(crate) struct Runtime<'a> {
+    engine: Engine<'a>,
+    state: State<'a>,
+}
+
 impl<'a> Runtime<'a> {
-    pub fn reload(&mut self) -> Result<(), crate::Error> {
-        self.state
-            .reload(&self.engine, &self.linker, &self.binary_path)?;
-        self.state.fill_store();
+    pub fn engine(&self) -> Engine<'a> {
+        self.engine.clone()
+    }
+
+    pub fn reload(&mut self, state: Result<State<'a>, crate::Error>) -> Result<(), crate::Error> {
+        self.state = state?;
+        self.state.fill_store()?;
 
         Ok(())
     }
@@ -53,21 +78,20 @@ impl<'a> Runtime<'a> {
             .join("debug")
             .join("component.wasm");
 
-        let engine = Engine::default();
+        let engine = wasmtime::Engine::default();
         let mut linker = Linker::new(&engine);
         Thawing::add_to_linker(&mut linker, |state| state)?;
 
-        let mut state = State::new(&engine, &linker, &binary_path)?;
-        state.fill_store();
-
         let linker = Arc::new(linker);
-
-        Ok(Self {
+        let engine = Engine {
             engine,
             linker,
-            state,
             binary_path,
-        })
+        };
+        let mut state = State::new(&engine)?;
+        state.fill_store()?;
+
+        Ok(Self { engine, state })
     }
 
     pub fn view(&self, bytes: &Vec<u8>) -> Result<Element<'a, guest::Message>, crate::Error> {
@@ -86,10 +110,12 @@ pub(crate) struct State<'a> {
 }
 
 impl<'a> State<'a> {
-    fn new(
-        engine: &Engine,
-        linker: &Linker<guest::State<'a>>,
-        binary_path: impl AsRef<Path>,
+    pub fn new(
+        Engine {
+            engine,
+            linker,
+            binary_path,
+        }: &Engine<'a>,
     ) -> Result<Self, crate::Error> {
         let component = Component::from_file(&engine, binary_path)?;
 
@@ -150,29 +176,11 @@ impl<'a> State<'a> {
             .unwrap()
     }
 
-    fn reload(
-        &mut self,
-        engine: &Engine,
-        linker: &Linker<guest::State<'a>>,
-        binary_path: impl AsRef<Path>,
-    ) -> Result<(), crate::Error> {
-        let component = Component::from_file(&engine, binary_path)?;
-        let mut store = self.store.lock().unwrap();
-        *store = Store::new(&engine, guest::State::new());
-        self.bindings = Arc::new(Thawing::instantiate(&mut *store, &component, &linker)?);
-
-        let table = self
-            .bindings
-            .thawing_core_guest()
-            .table()
-            .call_constructor(&mut *store)?;
-        self.table = Arc::new(table);
+    fn fill_store(&mut self) -> Result<(), crate::Error> {
+        let mut store = self.store.lock().map_err(Error::from)?;
+        store.data_mut().runtime = Some(self.clone());
 
         Ok(())
-    }
-
-    fn fill_store(&mut self) {
-        self.store.lock().unwrap().data_mut().runtime = Some(self.clone());
     }
 }
 
