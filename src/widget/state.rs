@@ -74,7 +74,12 @@ where
         limits: &layout::Limits,
     ) -> layout::Node {
         match &self.element {
-            Ok(element) => element.as_widget().layout(tree, renderer, limits),
+            Ok(element) => {
+                if self.invalidated {
+                    tree.diff(element.as_widget());
+                }
+                element.as_widget().layout(tree, renderer, limits)
+            }
             Err(error) => error.element.as_widget().layout(tree, renderer, limits),
         }
     }
@@ -109,7 +114,7 @@ where
         viewport: &Rectangle,
     ) {
         if self.invalidated {
-            shell.request_redraw();
+            shell.invalidate_widgets();
             self.invalidated = false;
         }
 
