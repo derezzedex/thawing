@@ -90,7 +90,7 @@ where
     fn diff(&self, tree: &mut Tree) {
         let state = tree.state.downcast_mut::<State<Message>>();
 
-        state.diff(&self.bytes, &self.initial, &mut tree.children[0]);
+        state.diff(&self.bytes, &self.initial, &mut tree.children);
     }
 
     fn size(&self) -> Size<Length> {
@@ -105,7 +105,7 @@ where
     ) -> layout::Node {
         let state = tree.state.downcast_ref::<State<Message>>();
 
-        state.layout(&self.initial, &mut tree.children[0], renderer, limits)
+        state.layout(&self.initial, &mut tree.children, renderer, limits)
     }
 
     fn operate(
@@ -122,7 +122,7 @@ where
         operation.container(id, layout.bounds(), &mut |operation| {
             state.operate(
                 &self.initial,
-                &mut tree.children[0],
+                &mut tree.children,
                 layout,
                 renderer,
                 operation,
@@ -145,7 +145,7 @@ where
 
         state.update(
             &mut self.initial,
-            &mut tree.children[0],
+            &mut tree.children,
             event,
             layout,
             cursor,
@@ -168,7 +168,7 @@ where
 
         state.mouse_interaction(
             &self.initial,
-            &tree.children[0],
+            &tree.children,
             layout,
             cursor,
             viewport,
@@ -190,7 +190,7 @@ where
 
         state.draw(
             &self.initial,
-            &tree.children[0],
+            &tree.children,
             renderer,
             theme,
             style,
@@ -213,7 +213,7 @@ where
 
         state.overlay(
             &mut self.initial,
-            &mut tree.children[0],
+            &mut tree.children,
             layout,
             renderer,
             viewport,

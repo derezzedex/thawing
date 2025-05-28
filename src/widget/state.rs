@@ -10,13 +10,17 @@ use crate::{guest, runtime};
 
 pub struct Error<Message> {
     element: Element<'static, Message>,
+    invalidated: bool,
 }
 
-impl<Message> Error<Message> {
+impl<Message: 'static> Error<Message> {
     pub fn new(error: crate::Error) -> Self {
         let element = failed(&error);
 
-        Self { element }
+        Self {
+            element,
+            invalidated: true,
+        }
     }
 }
 
@@ -26,6 +30,16 @@ pub enum State<Message> {
         caller: PathBuf,
     },
     Loaded(Result<Inner<Message>, Error<Message>>),
+}
+
+impl<Message> std::fmt::Debug for State<Message> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Loading { .. } => f.write_str("State::Loading {..}"),
+            Self::Loaded(Ok(_)) => f.write_str("State::Loaded(Ok(..))"),
+            Self::Loaded(Err(_)) => f.write_str("State::Loaded(Err(..))"),
+        }
+    }
 }
 
 pub struct Inner<Message> {
@@ -183,7 +197,7 @@ where
     }
 }
 
-impl<Message> State<Message> {
+impl<Message: 'static> State<Message> {
     pub fn new(
         bytes: &Result<Arc<Vec<u8>>, crate::Error>,
         caller: &Result<PathBuf, crate::Error>,
@@ -262,11 +276,18 @@ where
         &mut self,
         other: &Result<Arc<Vec<u8>>, crate::Error>,
         initial: &Element<'_, Message>,
-        tree: &mut Tree,
+        tree: &mut Vec<Tree>,
     ) {
         match self {
-            State::Loading { .. } => initial.as_widget().diff(tree),
-            State::Loaded(Err(error)) => error.element.as_widget().diff(tree),
+            State::Loading { .. } => initial.as_widget().diff(&mut tree[0]),
+            State::Loaded(Err(error)) => {
+                initial.as_widget().diff(&mut tree[0]);
+
+                if tree.get(1).is_none() {
+                    tree.push(Tree::new(error.element.as_widget()));
+                }
+                error.element.as_widget().diff(&mut tree[1]);
+            }
             State::Loaded(Ok(inner)) => {
                 match other {
                     Err(error) => {
@@ -280,7 +301,7 @@ where
                     }
                 }
 
-                inner.diff(tree)
+                inner.diff(&mut tree[0])
             }
         }
     }
@@ -288,41 +309,74 @@ where
     pub fn layout(
         &self,
         initial: &Element<'_, Message>,
-        tree: &mut Tree,
+        tree: &mut Vec<Tree>,
         renderer: &iced_widget::Renderer,
         limits: &layout::Limits,
     ) -> layout::Node {
         match self {
-            State::Loaded(Err(error)) => error.element.as_widget().layout(tree, renderer, limits),
-            State::Loading { .. } => initial.as_widget().layout(tree, renderer, limits),
-            State::Loaded(Ok(inner)) => inner.layout(tree, renderer, limits),
+            State::Loaded(Err(error)) => {
+                if tree.get(1).is_none() {
+                    return initial.as_widget().layout(&mut tree[0], renderer, limits);
+                }
+
+                let base = initial.as_widget().layout(&mut tree[0], renderer, limits);
+                let overlay = error
+                    .element
+                    .as_widget()
+                    .layout(&mut tree[1], renderer, limits);
+
+                layout::Node::with_children(limits.max(), vec![base, overlay])
+            }
+            State::Loading { .. } => initial.as_widget().layout(&mut tree[0], renderer, limits),
+            State::Loaded(Ok(inner)) => inner.layout(&mut tree[0], renderer, limits),
         }
     }
 
     pub fn operate(
         &self,
         initial: &Element<'_, Message>,
-        tree: &mut Tree,
+        tree: &mut Vec<Tree>,
         layout: Layout<'_>,
         renderer: &iced_widget::Renderer,
         operation: &mut dyn Operation,
     ) {
         match self {
-            State::Loaded(Err(error)) => error
-                .element
-                .as_widget()
-                .operate(tree, layout, renderer, operation),
-            State::Loading { .. } => initial
-                .as_widget()
-                .operate(tree, layout, renderer, operation),
-            State::Loaded(Ok(inner)) => inner.operate(tree, layout, renderer, operation),
+            State::Loaded(Err(error)) => {
+                if error.invalidated {
+                    return;
+                }
+
+                initial.as_widget().operate(
+                    &mut tree[0],
+                    layout.children().nth(0).unwrap(),
+                    renderer,
+                    operation,
+                );
+
+                if tree.get(1).is_none() {
+                    return;
+                }
+
+                error.element.as_widget().operate(
+                    &mut tree[1],
+                    layout.children().nth(1).unwrap(),
+                    renderer,
+                    operation,
+                )
+            }
+            State::Loading { .. } => {
+                initial
+                    .as_widget()
+                    .operate(&mut tree[0], layout, renderer, operation)
+            }
+            State::Loaded(Ok(inner)) => inner.operate(&mut tree[0], layout, renderer, operation),
         }
     }
 
     pub fn update(
         &mut self,
         initial: &mut Element<'_, Message>,
-        tree: &mut Tree,
+        tree: &mut Vec<Tree>,
         event: &Event,
         layout: Layout<'_>,
         cursor: mouse::Cursor,
@@ -332,15 +386,54 @@ where
         viewport: &Rectangle,
     ) {
         match self {
-            State::Loaded(Err(error)) => error.element.as_widget_mut().update(
-                tree, event, layout, cursor, renderer, clipboard, shell, viewport,
-            ),
+            State::Loaded(Err(error)) => {
+                initial.as_widget_mut().update(
+                    &mut tree[0],
+                    event,
+                    layout.children().nth(0).unwrap(),
+                    cursor,
+                    renderer,
+                    clipboard,
+                    shell,
+                    viewport,
+                );
+
+                if error.invalidated {
+                    shell.invalidate_widgets();
+                    error.invalidated = false;
+                }
+
+                error.element.as_widget_mut().update(
+                    &mut tree[1],
+                    event,
+                    layout.children().nth(1).unwrap(),
+                    cursor,
+                    renderer,
+                    clipboard,
+                    shell,
+                    viewport,
+                )
+            }
             State::Loading { .. } => initial.as_widget_mut().update(
-                tree, event, layout, cursor, renderer, clipboard, shell, viewport,
+                &mut tree[0],
+                event,
+                layout,
+                cursor,
+                renderer,
+                clipboard,
+                shell,
+                viewport,
             ),
             State::Loaded(Ok(inner)) => {
                 inner.update(
-                    tree, event, layout, cursor, renderer, clipboard, shell, viewport,
+                    &mut tree[0],
+                    event,
+                    layout,
+                    cursor,
+                    renderer,
+                    clipboard,
+                    shell,
+                    viewport,
                 );
             }
         }
@@ -349,22 +442,45 @@ where
     pub fn mouse_interaction(
         &self,
         initial: &Element<'_, Message>,
-        tree: &Tree,
+        tree: &Vec<Tree>,
         layout: Layout<'_>,
         cursor: mouse::Cursor,
         viewport: &Rectangle,
         renderer: &iced_widget::Renderer,
     ) -> mouse::Interaction {
         match self {
-            State::Loaded(Err(error)) => error
-                .element
-                .as_widget()
-                .mouse_interaction(tree, layout, cursor, viewport, renderer),
+            State::Loaded(Err(error)) => {
+                let base = initial.as_widget().mouse_interaction(
+                    &tree[0],
+                    layout.children().nth(0).unwrap(),
+                    cursor,
+                    viewport,
+                    renderer,
+                );
+
+                if tree.get(1).is_none() {
+                    return mouse::Interaction::None;
+                }
+
+                let overlay = error.element.as_widget().mouse_interaction(
+                    &tree[1],
+                    layout.children().nth(1).unwrap(),
+                    cursor,
+                    viewport,
+                    renderer,
+                );
+
+                if cursor.is_over(layout.children().nth(1).unwrap().bounds()) {
+                    overlay
+                } else {
+                    base
+                }
+            }
             State::Loading { .. } => initial
                 .as_widget()
-                .mouse_interaction(tree, layout, cursor, viewport, renderer),
+                .mouse_interaction(&tree[0], layout, cursor, viewport, renderer),
             State::Loaded(Ok(inner)) => {
-                inner.mouse_interaction(tree, layout, cursor, viewport, renderer)
+                inner.mouse_interaction(&tree[0], layout, cursor, viewport, renderer)
             }
         }
     }
@@ -372,7 +488,7 @@ where
     pub fn draw(
         &self,
         initial: &Element<'_, Message>,
-        tree: &Tree,
+        tree: &Vec<Tree>,
         renderer: &mut iced_widget::Renderer,
         theme: &iced_widget::Theme,
         style: &renderer::Style,
@@ -381,15 +497,32 @@ where
         viewport: &Rectangle,
     ) {
         match self {
-            State::Loaded(Err(error)) => error
-                .element
-                .as_widget()
-                .draw(tree, renderer, theme, style, layout, cursor, viewport),
+            State::Loaded(Err(error)) => {
+                initial.as_widget().draw(
+                    &tree[0],
+                    renderer,
+                    theme,
+                    style,
+                    layout.children().nth(0).unwrap(),
+                    cursor,
+                    viewport,
+                );
+
+                error.element.as_widget().draw(
+                    &tree[1],
+                    renderer,
+                    theme,
+                    style,
+                    layout.children().nth(1).unwrap(),
+                    cursor,
+                    viewport,
+                )
+            }
             State::Loading { .. } => initial
                 .as_widget()
-                .draw(tree, renderer, theme, style, layout, cursor, viewport),
+                .draw(&tree[0], renderer, theme, style, layout, cursor, viewport),
             State::Loaded(Ok(inner)) => {
-                inner.draw(tree, renderer, theme, style, layout, cursor, viewport)
+                inner.draw(&tree[0], renderer, theme, style, layout, cursor, viewport)
             }
         }
     }
@@ -397,7 +530,7 @@ where
     pub fn overlay<'b>(
         &'b mut self,
         initial: &'b mut Element<'_, Message>,
-        tree: &'b mut Tree,
+        tree: &'b mut Vec<Tree>,
         layout: Layout<'b>,
         renderer: &iced_widget::Renderer,
         viewport: &iced_core::Rectangle,
@@ -406,23 +539,92 @@ where
     {
         match self {
             State::Loaded(Err(error)) => {
-                error
-                    .element
-                    .as_widget_mut()
-                    .overlay(tree, layout, renderer, viewport, translation)
+                if tree.get(1).is_none() {
+                    return None;
+                }
+
+                error.element.as_widget_mut().overlay(
+                    &mut tree[1],
+                    layout.children().nth(1).unwrap(),
+                    renderer,
+                    viewport,
+                    translation,
+                )
             }
-            State::Loading { .. } => {
-                initial
-                    .as_widget_mut()
-                    .overlay(tree, layout, renderer, viewport, translation)
-            }
+            State::Loading { .. } => initial.as_widget_mut().overlay(
+                &mut tree[0],
+                layout,
+                renderer,
+                viewport,
+                translation,
+            ),
             State::Loaded(Ok(inner)) => {
-                inner.overlay(tree, layout, renderer, viewport, translation)
+                inner.overlay(&mut tree[0], layout, renderer, viewport, translation)
             }
         }
     }
 }
 
-fn failed<'a, Message>(text: impl ToString) -> Element<'a, Message> {
-    iced_widget::text(text.to_string()).size(12).into()
+fn failed<'a, Message: 'a>(error: &crate::Error) -> Element<'a, Message> {
+    use iced_core::alignment::{Horizontal, Vertical};
+    use iced_core::border;
+    use iced_core::text::Renderer;
+    use iced_widget::{column, container, float, row, rule, scrollable, text, vertical_rule};
+
+    let rule = vertical_rule(10).style(|theme: &iced_core::Theme| rule::Style {
+        color: theme.extended_palette().danger.weak.color,
+        width: 10,
+        radius: border::left(10),
+        fill_mode: rule::FillMode::Full,
+    });
+
+    let title = text("Failed")
+        .align_y(Vertical::Bottom)
+        .size(18)
+        .style(|theme: &iced_core::Theme| text::Style {
+            color: Some(theme.extended_palette().background.strong.text),
+        })
+        .font(iced_core::Font {
+            weight: iced_core::font::Weight::Bold,
+            ..iced_core::Font::DEFAULT
+        });
+
+    let description = text("The `thawing` runtime has reached an irrecoverable state").size(14);
+
+    let source = scrollable(
+        container(
+            text(error.to_string())
+                .font(iced_widget::Renderer::MONOSPACE_FONT)
+                .size(12),
+        )
+        .padding(8)
+        .style(|theme: &iced_core::Theme| container::Style {
+            border: border::rounded(10),
+            ..container::dark(theme)
+        }),
+    );
+
+    let content = column![column![title, description].padding(4).spacing(2), source]
+        .padding(8)
+        .spacing(4);
+
+    let error = container(row![rule, content].height(iced_core::Length::Shrink))
+        .center(iced_core::Length::Shrink)
+        .style(|theme: &iced_core::Theme| container::Style {
+            background: Some(iced_core::Background::Color(
+                theme.extended_palette().danger.strong.color,
+            )),
+            border: border::rounded(10),
+            ..Default::default()
+        });
+
+    float(error)
+        .translate(|bounds, viewport| {
+            let position =
+                viewport
+                    .shrink(8)
+                    .anchor(bounds.size(), Horizontal::Center, Vertical::Bottom);
+            bounds.offset(&Rectangle::new(position, bounds.size()))
+        })
+        .into()
 }
