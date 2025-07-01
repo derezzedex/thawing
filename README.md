@@ -138,12 +138,10 @@ There are quite a few limitations with the current approach, some are known to h
 Current code is still a prototype, because of decisions taken to speed up the prototyping of the idea, 
 `serde` and `bincode` are used instead of using the [Canonical ABI], this can be solved by expanding the interface (`.wit` files).
 
-### Guest callbacks
+### Guest callbacks and generics
 
-Guest callbacks are modelled improperly, WIT, the interface language doesn't have the callbacks as first-class citizen, meaning a workaround is needed.
+Guest callbacks and generics are modelled improperly; WIT, the used interface language doesn't have the callbacks or generics as first-class citizen, meaning a workaround is needed.
 One of the drawbacks of this, is that the `'a` lifetime used in [`iced`]'s `View` is not possible, making all the callbacks `'static`.
-
-### Generics
 
 [`iced`]: https://github.com/iced-rs/iced
 [`Element`]: https://docs.iced.rs/iced_core/struct.Element.html
